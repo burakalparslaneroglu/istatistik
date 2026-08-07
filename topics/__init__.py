@@ -1,0 +1,1 @@
+"""Course topic pages."""

@@ -1,0 +1,56 @@
+:root {
+  --course-text-scale: 1;
+  --course-primary: #173a5e;
+  --course-primary-soft: #eaf2f8;
+  --course-border: #d9e2ec;
+}
+
+.block-container {
+  max-width: 1180px;
+  padding-top: 2.2rem;
+  padding-bottom: 4rem;
+}
+
+.topic-badge {
+  display: inline-block;
+  padding: 0.28rem 0.68rem;
+  border: 1px solid var(--course-primary);
+  border-radius: 999px;
+  color: var(--course-primary);
+  background: var(--course-primary-soft);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: calc(0.78rem * var(--course-text-scale));
+  margin-bottom: 0.5rem;
+}
+
+.topic-lead {
+  font-size: calc(1.05rem * var(--course-text-scale));
+  color: #475569;
+  margin: -0.45rem 0 1.2rem 0;
+}
+
+.concept-card {
+  border: 1px solid var(--course-border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.05rem;
+  margin: 0.4rem 0 0.9rem 0;
+  min-height: 7.3rem;
+  background: rgba(234, 242, 248, 0.35);
+}
+
+.concept-title {
+  font-weight: 700;
+  color: var(--course-primary);
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 700px) {
+  .block-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .concept-card {
+    min-height: auto;
+  }
+}
