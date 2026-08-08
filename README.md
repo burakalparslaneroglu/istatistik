@@ -45,3 +45,33 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m compileall app.py core topics tests
 git diff --check
 ```
+
+## Veri ve hesaplama kaynakları
+
+Uygulamadaki örnek veri setleri ve sayısal senaryolar ders notlarındaki örneklerden veya öğretim amacıyla açıkça tanımlanmış yapay verilerden oluşturulur. Çalışma zamanında dış veri kaynağı, LLM veya dış API çağrısı yapılmaz. Simülasyonlarda yeniden üretilebilirlik için sabit veya açıkça yönetilen rassal sayı üreticileri kullanılır.
+
+## İstatistiksel yorumlama ilkeleri
+
+- Betimsel sonuçlar gözlenen veri bağlamında yorumlanır; anakütleye genelleme ancak çıkarım mantığıyla yapılır.
+- Korelasyon tek başına nedensellik kanıtı olarak yorumlanmaz.
+- Olasılık, dağılım ve örnekleme sonuçlarında payda, birim ve koşul açık tutulur.
+- Grafiklerde X ve Y eksen başlıkları zorunludur; bilgi yalnız renkle kodlanmaz.
+- Ders notlarında henüz tanıtılmamış yöntemler önceki konularda varsayılmaz.
+
+## Streamlit Community Cloud ile yayınlama
+
+Kararlı `main` dalı Streamlit Community Cloud üzerinden yayımlanabilir:
+
+1. GitHub deposunu seçin.
+2. Branch olarak `main` kullanın.
+3. Main file path olarak `app.py` seçin.
+4. Python sürümünü `3.12` olarak ayarlayın.
+5. Bağımlılıkların `requirements.txt` üzerinden kurulmasını sağlayın.
+
+Uygulama secret veya dış API kullanmadığından ek bir secret yapılandırması gerektirmez.
+
+Yayın sonrasında en az Konu 01, orta bir konu ve Konu 12 için canlı smoke test yapılmalıdır. Grafikler, widget'lar, soru düğmeleri ve metin ölçeği canlı ortamda yeniden kontrol edilmelidir.
+
+## Kullanım ve lisans notu
+
+Bu depo İKT 207 İstatistik dersi için eğitim materyali olarak hazırlanmıştır. Depoya ayrıca açık kaynak lisansı eklenmediği sürece standart telif hakları geçerlidir; yeniden kullanım ve dağıtım için hak sahibinin belirlediği koşullar esas alınmalıdır.

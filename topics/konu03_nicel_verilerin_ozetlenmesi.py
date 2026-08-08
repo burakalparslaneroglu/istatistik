@@ -218,7 +218,7 @@ def _render_summary_tab() -> None:
 def render() -> None:
     topic_header(
         3,
-        "Nicel Verilerin Özetlenmesi",
+        "Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi",
         "Nicel veriyi özetlerken sayısal ekseni sınıflara ayırır; frekans, histogram ve kümülatif gösterimlerle dağılımın nerede yoğunlaştığını inceleriz.",
     )
     learning_goals(

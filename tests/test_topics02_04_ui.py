@@ -18,13 +18,13 @@ def _open_topic(label: str) -> AppTest:
 def test_topic02_renders_without_exception():
     at = _open_topic(TOPIC_LABELS[0])
     assert not at.exception
-    assert any("Kategorik Verilerin Özetlenmesi" in title.value for title in at.title)
+    assert any("Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi" in title.value for title in at.title)
 
 
 def test_topic03_renders_without_exception():
     at = _open_topic(TOPIC_LABELS[1])
     assert not at.exception
-    assert any("Nicel Verilerin Özetlenmesi" in title.value for title in at.title)
+    assert any("Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi" in title.value for title in at.title)
 
 
 def test_topic04_renders_without_exception():
