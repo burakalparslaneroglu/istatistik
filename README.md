@@ -1,50 +1,39 @@
 # İKT 207 İstatistik — Etkileşimli Ders Uygulaması
 
-İkinci sınıf iktisat öğrencileri için Streamlit tabanlı Türkçe istatistik uygulaması.
-Ders notları içerik, terminoloji, notasyon, matematiksel seviye ve konu sırası açısından bağlayıcı kaynaktır.
+İkinci sınıf İktisat öğrencileri için Streamlit tabanlı, Türkçe etkileşimli ders uygulaması. Ders notları konu sırası, terminoloji, notasyon ve pedagojik kapsam açısından bağlayıcı kaynaktır.
 
-## Current scope
+## Mevcut modüller
 
-- Application foundation
-- Topic 01: Veri ve İstatistiğe Giriş
-- Shared text scaling (%100–130)
-- Shared question component
-- Mandatory X/Y axis-title chart renderer
-- pytest + Streamlit AppTest
-- GitHub Actions CI
+- Konu 01 — Veri ve İstatistiğe Giriş
+- Konu 02 — Kategorik Verilerin Özetlenmesi
+- Konu 03 — Nicel Verilerin Özetlenmesi
+- Konu 04 — Merkezi Eğilim ve Konum Ölçüleri
 
-## Local setup (Windows PowerShell)
+## Tasarım ilkeleri
+
+- Hesaplama mantığı `core/`, sunum `topics/` altında ayrılır.
+- Her X–Y grafiği ortak `render_plotly` bileşeninden geçer.
+- Bütün veri grafiklerinde açık X ve Y eksen başlıkları zorunludur ve test edilir.
+- Simülasyon ve hesaplamalar deterministik/test edilebilir tasarlanır.
+- İleri konular önceki konularda varsayılmaz.
+
+## Kurulum
 
 ```powershell
-cd E:\Github\istatistik
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-## Run
+## Çalıştırma
 
 ```powershell
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-## Validate
+## Test
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m compileall app.py core topics tests
 git diff --check
 ```
-
-## Graph standard
-
-Every data chart must have explicit, human-readable X and Y axis titles. Topic modules may not call `st.plotly_chart()` directly; they use the shared `render_plotly()` component.
-
-## Development sequence
-
-- `feature/konu01-app-foundation`
-- `feature/konu02-04`
-- `feature/konu05-07`
-- `feature/konu08-10`
-- `feature/konu11-12`
-- `fix/final-application-audit`
