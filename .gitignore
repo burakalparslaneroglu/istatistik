@@ -24,3 +24,9 @@ PAKET_*_TALIMATI.md
 
 *.mp4
 .DS_Store
+
+# Local development/review artifacts
+KONU*.patch
+IKT207_*_UPDATE.zip
+IKT207_*_SNAPSHOT.zip
+IKT207_*_FULL_SNAPSHOT.zip

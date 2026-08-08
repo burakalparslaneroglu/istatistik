@@ -248,7 +248,7 @@ def _integrated() -> None:
 
 
 def render() -> None:
-    topic_header(12, "Örnekleme ve Örnekleme Dağılımları", "Tek bir örneklem sonucundan, tekrarlı örneklemede istatistiklerin nasıl dağıldığını anlamaya geçiyoruz.")
+    topic_header(12, "Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları", "Tek bir örneklem sonucundan, tekrarlı örneklemede istatistiklerin nasıl dağıldığını anlamaya geçiyoruz.")
     learning_goals([
         "Anakütle, örneklem, parametre, istatistik, nokta tahmini ve örnekleme çerçevesini ayırmak.",
         "Örneklem ortalamasının örnekleme dağılımında E(X̄)=μ ve SE(X̄)=σ/√n ilişkilerini yorumlamak.",

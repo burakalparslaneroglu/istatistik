@@ -108,6 +108,26 @@ def binomial_normal_approx_probability(
     return std_normal_cdf(z_value(hi)) - std_normal_cdf(z_value(lo))
 
 
+def exponential_plot_bounds(event: str, x: float, mean: float, b: float | None = None) -> tuple[float, float, float]:
+    """Return a safe finite plotting interval (lo, hi, xmax) for exponential-event shading."""
+    if mean <= 0:
+        raise ValueError("Ortalama süre pozitif olmalıdır.")
+    if x < 0 or (b is not None and b < 0):
+        raise ValueError("Süre sınırları negatif olamaz.")
+
+    candidate_upper = max(60.0, 5 * mean, x, b if b is not None else 0.0)
+    if event == "X ≤ x":
+        return 0.0, x, candidate_upper
+    if event == "X > x":
+        right_tail_upper = max(candidate_upper, x + 5 * mean)
+        return x, right_tail_upper, right_tail_upper
+    if event == "a < X ≤ b":
+        if b is None:
+            raise ValueError("Aralık olayında ikinci sınır gereklidir.")
+        lo, hi = sorted((x, b))
+        return lo, hi, candidate_upper
+    raise ValueError("Bilinmeyen üstel dağılım olay türü.")
+
 def exponential_cdf(x: float, mean: float) -> float:
     if mean <= 0:
         raise ValueError("Ortalama süre pozitif olmalıdır.")

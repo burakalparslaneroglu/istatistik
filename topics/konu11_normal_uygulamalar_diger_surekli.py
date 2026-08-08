@@ -14,6 +14,7 @@ from core.topic11_logic import (
     continuity_bounds,
     exponential_cdf,
     exponential_interval_probability,
+    exponential_plot_bounds,
     exponential_survival,
     normal_probability,
     normal_quantile,
@@ -140,18 +141,15 @@ def _exponential() -> None:
     b = None
     if event == "X ≤ x":
         prob = exponential_cdf(x, mean)
-        lo, hi = 0.0, x
     elif event == "X > x":
         prob = exponential_survival(x, mean)
-        lo, hi = x, 5 * mean
     else:
         b = st.slider("b (dakika)", 0.0, 90.0, 30.0, 1.0, key="konu11_exp_b")
         prob = exponential_interval_probability(x, b, mean)
-        lo, hi = sorted((x, b))
+    lo, hi, xmax = exponential_plot_bounds(event, x, mean, b)
     st.metric("İstenen olasılık", f"{prob:.4f}")
     st.caption(f"Üstel dağılımda E(X)=σ={mean:.1f} dakika; Var(X)={mean**2:.1f} dakika².")
 
-    xmax = max(60.0, 5 * mean, hi)
     xs = np.linspace(0, xmax, 500)
     ys = np.exp(-xs / mean) / mean
     shade = (xs >= lo) & (xs <= hi)
@@ -194,7 +192,7 @@ def _model_choice_and_integrated() -> None:
 
 
 def render() -> None:
-    topic_header(11, "Normal Dağılım Uygulamaları ve Diğer Sürekli Dağılımlar", "Standart normal alanlardan özgün ölçeğe, ters normal eşiklere, binomun normal yaklaştırmasına ve üstel bekleme sürelerine geçiyoruz.")
+    topic_header(11, "Normal Olasılıklar ve Üstel Dağılım", "Standart normal alanlardan özgün ölçeğe, ters normal eşiklere, binomun normal yaklaştırmasına ve üstel bekleme sürelerine geçiyoruz.")
     learning_goals([
         "Φ(z)=P(Z≤z) sol kümülatif alanını kullanarak sol, sağ ve aralık olasılıklarını hesaplamak.",
         "X~N(μ,σ²) değişkenini z-skoruna dönüştürmek ve ters normal sorularında eşik değer bulmak.",

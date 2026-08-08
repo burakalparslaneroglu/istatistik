@@ -358,7 +358,7 @@ def _render_simpson_summary_tab() -> None:
 def render() -> None:
     topic_header(
         2,
-        "Kategorik Verilerin Özetlenmesi",
+        "Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi",
         "Kategorik veride temel amaç, kategori sayılarını doğru paydayla oranlara dönüştürmek ve karşılaştırmayı açık bir tablo veya grafikle sunmaktır.",
     )
     learning_goals(

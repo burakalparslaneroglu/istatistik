@@ -16,10 +16,10 @@ def _open_topic(label: str) -> AppTest:
 def test_topic11_renders_without_exception():
     at = _open_topic(TOPIC_LABELS[0])
     assert not at.exception
-    assert any("Normal Dağılım Uygulamaları" in title.value for title in at.title)
+    assert any("Normal Olasılıklar ve Üstel Dağılım" in title.value for title in at.title)
 
 
 def test_topic12_renders_without_exception():
     at = _open_topic(TOPIC_LABELS[1])
     assert not at.exception
-    assert any("Örnekleme ve Örnekleme Dağılımları" in title.value for title in at.title)
+    assert any("Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları" in title.value for title in at.title)
