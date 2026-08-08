@@ -10,6 +10,9 @@ from topics.konu01_veri_istatistige_giris import render as render_konu01
 from topics.konu02_kategorik_verilerin_ozetlenmesi import render as render_konu02
 from topics.konu03_nicel_verilerin_ozetlenmesi import render as render_konu03
 from topics.konu04_merkezi_egilim_konum import render as render_konu04
+from topics.konu05_degiskenlik_dagilim_iliskiler import render as render_konu05
+from topics.konu06_olasiligin_temelleri import render as render_konu06
+from topics.konu07_kosullu_olasilik_bayes import render as render_konu07
 
 
 st.set_page_config(
@@ -30,6 +33,9 @@ TOPICS = {
     "Konu 02 · Kategorik Verilerin Özetlenmesi": render_konu02,
     "Konu 03 · Nicel Verilerin Özetlenmesi": render_konu03,
     "Konu 04 · Merkezi Eğilim ve Konum Ölçüleri": render_konu04,
+    "Konu 05 · Değişkenlik, Dağılım ve İlişki": render_konu05,
+    "Konu 06 · Olasılığın Temelleri": render_konu06,
+    "Konu 07 · Koşullu Olasılık, Bağımsızlık ve Bayes": render_konu07,
 }
 
 selected_topic = st.sidebar.radio(

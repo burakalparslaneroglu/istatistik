@@ -8,6 +8,9 @@
 - Konu 02 — Kategorik Verilerin Özetlenmesi
 - Konu 03 — Nicel Verilerin Özetlenmesi
 - Konu 04 — Merkezi Eğilim ve Konum Ölçüleri
+- Konu 05 — Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki
+- Konu 06 — Olasılığın Temelleri
+- Konu 07 — Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi
 
 ## Tasarım ilkeleri
 
