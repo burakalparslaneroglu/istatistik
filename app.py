@@ -13,6 +13,9 @@ from topics.konu04_merkezi_egilim_konum import render as render_konu04
 from topics.konu05_degiskenlik_dagilim_iliskiler import render as render_konu05
 from topics.konu06_olasiligin_temelleri import render as render_konu06
 from topics.konu07_kosullu_olasilik_bayes import render as render_konu07
+from topics.konu08_rassal_degiskenler_kesikli_dagilimlar import render as render_konu08
+from topics.konu09_binom_poisson_hipergeometrik import render as render_konu09
+from topics.konu10_surekli_rassal_degisken_normal import render as render_konu10
 
 
 st.set_page_config(
@@ -36,6 +39,9 @@ TOPICS = {
     "Konu 05 · Değişkenlik, Dağılım ve İlişki": render_konu05,
     "Konu 06 · Olasılığın Temelleri": render_konu06,
     "Konu 07 · Koşullu Olasılık, Bağımsızlık ve Bayes": render_konu07,
+    "Konu 08 · Rassal Değişkenler ve Kesikli Dağılımlar": render_konu08,
+    "Konu 09 · Binom, Poisson ve Hipergeometrik": render_konu09,
+    "Konu 10 · Sürekli Rassal Değişkenler ve Normal Dağılım": render_konu10,
 }
 
 selected_topic = st.sidebar.radio(
