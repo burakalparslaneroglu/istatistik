@@ -12,7 +12,7 @@ from core.topic09_logic import (
     hypergeometric_distribution, hypergeometric_mean_var, hypergeometric_pmf,
     poisson_distribution, poisson_pmf,
 )
-from core.ui_components import learning_goals, render_plotly, topic_header
+from core.ui_components import learning_goals, render_plotly, reset_widget_state, topic_header
 
 QUESTIONS = (
     Question("Binom dağılımında başarı olasılığı p denemeden denemeye değişebilir mi?", "Hayır. Binom deneyinde p sabittir ve denemeler bağımsızdır."),
@@ -31,13 +31,22 @@ SCENARIOS = {
 
 def _model_choice() -> None:
     st.subheader("1. Önce deney yapısı, sonra formül")
-    scenario = st.selectbox("Hikâyeyi seçiniz", list(SCENARIOS), key="konu09_story")
-    guess = st.radio("Uygun model", ["Binom", "Poisson", "Hipergeometrik", "Bu üç modelden biri olduğu söylenemez"], key="konu09_model_guess")
-    if guess == SCENARIOS[scenario]:
+    scenario = st.selectbox(
+        "Hikâyeyi seçiniz",
+        list(SCENARIOS),
+        key="konu09_story",
+        on_change=reset_widget_state,
+        args=("konu09_model_guess",),
+    )
+    guess = st.radio("Uygun model", ["Binom", "Poisson", "Hipergeometrik", "Bu üç modelden biri olduğu söylenemez"], index=None, key="konu09_model_guess")
+    if guess is None:
+        st.caption("Önce modelinizi seçin; karar özeti ve geri bildirim seçimden sonra görünecektir.")
+    elif guess == SCENARIOS[scenario]:
         st.success(f"Doğru: **{SCENARIOS[scenario]}**.")
+        st.markdown("**Karar özeti:** sabit n + iki sonuç + sabit p + bağımsızlık → Binom; sabit aralıkta olay sayısı → Poisson; sonlu anakütleden yerine koymadan seçim → Hipergeometrik.")
     else:
         st.warning("Modeli değişken adından değil, deneme mekanizmasından seçin: sabit n mi, sabit aralık mı, yoksa sonlu havuzdan yerine koymadan seçim mi?")
-    st.markdown("**Karar özeti:** sabit n + iki sonuç + sabit p + bağımsızlık → Binom; sabit aralıkta olay sayısı → Poisson; sonlu anakütleden yerine koymadan seçim → Hipergeometrik.")
+        st.markdown("**Karar özeti:** sabit n + iki sonuç + sabit p + bağımsızlık → Binom; sabit aralıkta olay sayısı → Poisson; sonlu anakütleden yerine koymadan seçim → Hipergeometrik.")
 
 
 def _binomial() -> None:

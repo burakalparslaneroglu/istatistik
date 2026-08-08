@@ -12,7 +12,7 @@ from core.topic08_logic import (
     independent_joint, joint_moments, marginals, profit_distribution,
     running_mean_simulation,
 )
-from core.ui_components import learning_goals, render_plotly, topic_header
+from core.ui_components import learning_goals, render_plotly, reset_widget_state, topic_header
 
 QUESTIONS = (
     Question("Rassal değişken ile gözlenen x değeri aynı şey midir?", "Hayır. X deney gerçekleşmeden önce olası sayısal sonuçları tanımlar; x ise X'in belirli bir gerçekleşmesidir."),
@@ -36,12 +36,23 @@ def _rv_types() -> None:
         "Bir paketin ağırlığı": "Sürekli",
         "Bir ayda alınan izin günü sayısı": "Kesikli",
     }
-    selected = st.selectbox("Bir rassal değişken seçiniz", list(scenarios), key="konu08_rv_scenario")
-    answer = st.radio("Sınıflandırmanız", ["Kesikli", "Sürekli"], horizontal=True, key="konu08_rv_type")
-    if answer == scenarios[selected]:
-        st.success(f"Doğru: **{selected}** → {scenarios[selected].lower()} rassal değişken.")
+    selected = st.selectbox(
+        "Bir rassal değişken seçiniz",
+        list(scenarios),
+        key="konu08_rv_scenario",
+        on_change=reset_widget_state,
+        args=("konu08_rv_type",),
+    )
+    answer = st.radio("Sınıflandırmanız", ["Kesikli", "Sürekli"], index=None, horizontal=True, key="konu08_rv_type")
+    if answer is None:
+        st.caption("Önce sınıflandırmanızı yapın; gerekçe seçimden sonra görünecektir.")
+    elif answer == scenarios[selected]:
+        reason = "sayılabilir ayrı değerler alır" if scenarios[selected] == "Kesikli" else "bir aralıkta ara değerler de alabilir"
+        st.success(f"Doğru: **{selected}** → {scenarios[selected].lower()} rassal değişken; çünkü {reason}.")
     else:
-        st.warning("Tekrar düşünün: değişken sayılabilir ayrı değerler mi, yoksa bir aralıktaki ara değerleri de alabilir mi?")
+        expected = scenarios[selected]
+        reason = "sayılabilir ayrı değerler aldığı" if expected == "Kesikli" else "bir aralıkta ara değerler de alabildiği"
+        st.warning(f"Bu değişken **{expected.lower()}**dır; {reason} için bu sınıfa girer.")
 
 
 def _pmf_lab() -> None:
