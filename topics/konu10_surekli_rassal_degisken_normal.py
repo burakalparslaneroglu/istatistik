@@ -10,7 +10,7 @@ from core.topic10_logic import (
     empirical_rule_bounds, from_z, normal_density, normal_interval_probability,
     uniform_density, uniform_mean_var, uniform_probability, z_score,
 )
-from core.ui_components import learning_goals, render_plotly, topic_header
+from core.ui_components import learning_goals, render_plotly, reset_widget_state, topic_header
 
 QUESTIONS = (
     Question("Sürekli bir rassal değişkende P(X=x) neden 0'dır?", "Olasılık tek bir noktanın yüksekliğiyle değil, eğri altındaki alanla ölçülür; tek noktanın genişliği ve dolayısıyla alanı 0'dır."),
@@ -70,13 +70,13 @@ def _normal_shape() -> None:
     st.subheader("3. Normal eğrinin konumu ve yayılımı")
     mu = st.slider("Ortalama μ", -20.0, 20.0, 0.0, 1.0, key="konu10_norm_mu")
     sigma = st.slider("Standart sapma σ", 0.5, 6.0, 1.0, 0.5, key="konu10_norm_sigma")
-    xs = np.linspace(mu-4*sigma, mu+4*sigma, 400)
+    xs = np.linspace(-45, 45, 700)
     ys = normal_density(xs, mu, sigma)
     fig = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", name="Normal yoğunluk"))
     fig.add_vline(x=mu, line_dash="dash")
-    fig.update_layout(title=f"Normal dağılım: μ={mu:g}, σ={sigma:g}")
+    fig.update_layout(title=f"Normal dağılım: μ={mu:g}, σ={sigma:g}", xaxis_range=[-45, 45], yaxis_range=[0, 0.82])
     render_plotly(fig, x_title="Rassal değişken değeri, x", y_title="Olasılık yoğunluğu, f(x)", key="konu10_normal_shape")
-    st.caption("μ eğriyi yatayda taşır. σ büyüdükçe eğri genişler ve basıklaşır; toplam alan 1 olarak kalır.")
+    st.caption("Eksenler sabit tutulmuştur: μ değiştikçe eğri aynı X–Y koordinat sisteminde sağa veya sola kayar. σ büyüdükçe eğri genişler ve basıklaşır; toplam alan 1 olarak kalır.")
 
 
 def _empirical_z() -> None:
@@ -111,10 +111,25 @@ def _model_and_integrated() -> None:
         "Dolum miktarları merkez çevresinde simetrik ve çan biçimli": "Normal",
         "Bekleme süresi güçlü biçimde sağa çarpık": "Bu iki modelden biri olduğu söylenemez",
     }
-    s=st.selectbox("Hikâye",list(scenarios),key="konu10_model_story")
-    g=st.radio("Model",["Tek-düze","Normal","Bu iki modelden biri olduğu söylenemez"],key="konu10_model_guess")
-    if g==scenarios[s]: st.success("Doğru model seçimi.")
-    else: st.warning("Sürekli olmak tek başına normal dağılım demek değildir; hikâyedeki biçim/alan yapısını kullanın.")
+    s=st.selectbox(
+        "Hikâye",
+        list(scenarios),
+        key="konu10_model_story",
+        on_change=reset_widget_state,
+        args=("konu10_model_guess",),
+    )
+    g=st.radio(
+        "Model",
+        ["Tek-düze", "Normal", "Bu iki modelden biri olduğu söylenemez"],
+        index=None,
+        key="konu10_model_guess",
+    )
+    if g is None:
+        st.caption("Önce modelinizi seçin; geri bildirim seçimden sonra görünecektir.")
+    elif g == scenarios[s]:
+        st.success("Doğru model seçimi.")
+    else:
+        st.warning("Sürekli olmak tek başına normal dağılım demek değildir; hikâyedeki biçim/alan yapısını kullanın.")
 
     st.markdown("#### Dolum miktarı: X ~ N(500, 10²)")
     x=st.slider("İncelenen dolum miktarı (ml)",460,540,510,1,key="konu10_fill_x")

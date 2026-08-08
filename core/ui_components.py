@@ -48,6 +48,12 @@ def feedback_box(correct: bool, correct_text: str, incorrect_text: str) -> None:
         st.warning(incorrect_text)
 
 
+
+def reset_widget_state(*keys: str) -> None:
+    """Clear dependent widget selections when a controlling choice changes."""
+    for key in keys:
+        st.session_state.pop(key, None)
+
 def render_plotly(
     fig: go.Figure,
     *,

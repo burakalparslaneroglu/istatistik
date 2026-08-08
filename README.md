@@ -11,6 +11,11 @@
 - Konu 05 — Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki
 - Konu 06 — Olasılığın Temelleri
 - Konu 07 — Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi
+- Konu 08 — Rassal Değişkenler ve Kesikli Olasılık Dağılımları
+- Konu 09 — Binom, Poisson ve Hipergeometrik Dağılımlar
+- Konu 10 — Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım
+- Konu 11 — Normal Dağılım Uygulamaları ve Diğer Sürekli Dağılımlar
+- Konu 12 — Örnekleme ve Örnekleme Dağılımları
 
 ## Tasarım ilkeleri
 

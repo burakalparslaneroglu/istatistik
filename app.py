@@ -16,6 +16,8 @@ from topics.konu07_kosullu_olasilik_bayes import render as render_konu07
 from topics.konu08_rassal_degiskenler_kesikli_dagilimlar import render as render_konu08
 from topics.konu09_binom_poisson_hipergeometrik import render as render_konu09
 from topics.konu10_surekli_rassal_degisken_normal import render as render_konu10
+from topics.konu11_normal_uygulamalar_diger_surekli import render as render_konu11
+from topics.konu12_ornekleme_ornekleme_dagilimlari import render as render_konu12
 
 
 st.set_page_config(
@@ -42,6 +44,8 @@ TOPICS = {
     "Konu 08 · Rassal Değişkenler ve Kesikli Dağılımlar": render_konu08,
     "Konu 09 · Binom, Poisson ve Hipergeometrik": render_konu09,
     "Konu 10 · Sürekli Rassal Değişkenler ve Normal Dağılım": render_konu10,
+    "Konu 11 · Normal Uygulamaları ve Diğer Sürekli Dağılımlar": render_konu11,
+    "Konu 12 · Örnekleme ve Örnekleme Dağılımları": render_konu12,
 }
 
 selected_topic = st.sidebar.radio(

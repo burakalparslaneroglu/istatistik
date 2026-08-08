@@ -26,6 +26,7 @@ from core.ui_components import (
     learning_goals,
     render_definition_grid,
     render_plotly,
+    reset_widget_state,
     topic_header,
 )
 
@@ -102,6 +103,8 @@ def _render_variable_tab() -> None:
         "Sınıflandırılacak değişken",
         list(VARIABLE_EXAMPLES),
         key="konu01_variable_example",
+        on_change=reset_widget_state,
+        args=("konu01_variable_type_answer", "konu01_scale_answer"),
     )
     true_type, true_scale = classify_variable(example)
 
@@ -110,23 +113,28 @@ def _render_variable_tab() -> None:
         chosen_type = st.radio(
             "Değişken türü",
             ["Kategorik", "Nicel – kesikli", "Nicel – sürekli"],
+            index=None,
             key="konu01_variable_type_answer",
         )
     with col2:
         chosen_scale = st.radio(
             "Ölçme düzeyi",
             ["Nominal", "Ordinal", "Aralık", "Oran"],
+            index=None,
             key="konu01_scale_answer",
         )
 
     if st.button("Sınıflandırmayı kontrol et", key="konu01_check_variable"):
-        type_ok = chosen_type == true_type
-        scale_ok = chosen_scale == true_scale
-        feedback_box(
-            type_ok and scale_ok,
-            f"Doğru. Tür: {true_type}; ölçme düzeyi: {true_scale}.",
-            f"Tekrar düşünün. Ders notundaki sınıflandırmaya göre tür: {true_type}; ölçme düzeyi: {true_scale}.",
-        )
+        if chosen_type is None or chosen_scale is None:
+            st.warning("Kontrol etmeden önce hem değişken türünü hem ölçme düzeyini seçin.")
+        else:
+            type_ok = chosen_type == true_type
+            scale_ok = chosen_scale == true_scale
+            feedback_box(
+                type_ok and scale_ok,
+                f"Doğru. Tür: {true_type}; ölçme düzeyi: {true_scale}.",
+                f"Tekrar düşünün. Ders notundaki sınıflandırmaya göre tür: {true_type}; ölçme düzeyi: {true_scale}.",
+            )
 
     with st.expander("Ölçme düzeylerini karşılaştır"):
         st.markdown(
@@ -145,20 +153,26 @@ def _render_time_source_tab() -> None:
         "Veri yapısını sınıflandırınız",
         list(TIME_STRUCTURE_EXAMPLES),
         key="konu01_time_scenario",
+        on_change=reset_widget_state,
+        args=("konu01_time_answer",),
     )
     answer = st.radio(
         "Bu veri hangi yapıdadır?",
         ["Yatay kesit", "Zaman serisi"],
+        index=None,
         horizontal=True,
         key="konu01_time_answer",
     )
     if st.button("Veri yapısını kontrol et", key="konu01_check_time"):
-        correct = classify_time_structure(scenario)
-        feedback_box(
-            answer == correct,
-            f"Doğru: {correct}.",
-            f"Bu örnek {correct} verisidir. Gözlem birimi ile zaman boyutunu yeniden ayırmayı deneyin.",
-        )
+        if answer is None:
+            st.warning("Kontrol etmeden önce veri yapısını seçin.")
+        else:
+            correct = classify_time_structure(scenario)
+            feedback_box(
+                answer == correct,
+                f"Doğru: {correct}.",
+                f"Bu örnek {correct} verisidir. Gözlem birimi ile zaman boyutunu yeniden ayırmayı deneyin.",
+            )
 
     chart_col1, chart_col2 = st.columns(2)
     with chart_col1:
@@ -210,20 +224,26 @@ def _render_time_source_tab() -> None:
         "Senaryo",
         list(DATA_SOURCE_EXAMPLES),
         key="konu01_source_scenario",
+        on_change=reset_widget_state,
+        args=("konu01_source_answer",),
     )
     source_answer = st.radio(
         "Veri elde etme yolu",
         ["Mevcut kaynak", "Gözlemsel çalışma", "Deney"],
+        index=None,
         horizontal=True,
         key="konu01_source_answer",
     )
     if st.button("Veri kaynağını kontrol et", key="konu01_check_source"):
-        correct = classify_data_source(source_scenario)
-        feedback_box(
-            source_answer == correct,
-            f"Doğru: {correct}.",
-            f"Bu senaryoda en uygun sınıflandırma: {correct}.",
-        )
+        if source_answer is None:
+            st.warning("Kontrol etmeden önce veri elde etme yolunu seçin.")
+        else:
+            correct = classify_data_source(source_scenario)
+            feedback_box(
+                source_answer == correct,
+                f"Doğru: {correct}.",
+                f"Bu senaryoda en uygun sınıflandırma: {correct}.",
+            )
 
     st.warning(
         "Gözlemsel veride iki değişkenin birlikte hareket etmesi, birinin diğerini mutlaka nedenlediği anlamına gelmez."
@@ -237,20 +257,26 @@ def _render_inference_sample_tab() -> None:
         "İfadeyi sınıflandırınız",
         list(INFERENCE_EXAMPLES),
         key="konu01_inference_scenario",
+        on_change=reset_widget_state,
+        args=("konu01_inference_answer",),
     )
     inference_answer = st.radio(
         "Bu ifade hangi amaca daha yakındır?",
         ["Betimsel istatistik", "İstatistiksel çıkarım"],
+        index=None,
         horizontal=True,
         key="konu01_inference_answer",
     )
     if st.button("İfadeyi kontrol et", key="konu01_check_inference"):
-        correct = classify_inference(inference_scenario)
-        feedback_box(
-            inference_answer == correct,
-            f"Doğru: {correct}.",
-            f"Bu ifade {correct} örneğidir. Gözlenen verinin dışına çıkılıp çıkılmadığına dikkat edin.",
-        )
+        if inference_answer is None:
+            st.warning("Kontrol etmeden önce sınıflandırmanızı seçin.")
+        else:
+            correct = classify_inference(inference_scenario)
+            feedback_box(
+                inference_answer == correct,
+                f"Doğru: {correct}.",
+                f"Bu ifade {correct} örneğidir. Gözlenen verinin dışına çıkılıp çıkılmadığına dikkat edin.",
+            )
 
     st.divider()
     st.markdown("#### Büyük örneklem her zaman iyi örneklem midir?")
