@@ -21,7 +21,7 @@ from topics.konu12_ornekleme_ornekleme_dagilimlari import render as render_konu1
 
 
 st.set_page_config(
-    page_title="İKT 207 İstatistik",
+    page_title="İKT 217 İstatistik",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -30,7 +30,7 @@ st.set_page_config(
 load_css(Path("assets/styles.css"))
 render_text_scale_control()
 
-st.sidebar.markdown("## İKT 207 İstatistik")
+st.sidebar.markdown("## İKT 217 İstatistik")
 st.sidebar.caption("Etkileşimli ders uygulaması")
 
 TOPICS = {
