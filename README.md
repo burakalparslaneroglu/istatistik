@@ -1,4 +1,4 @@
-# İKT 207 İstatistik — Etkileşimli Ders Uygulaması
+# İKT 217 İstatistik — Etkileşimli Ders Uygulaması
 
 İkinci sınıf İktisat öğrencileri için Streamlit tabanlı, Türkçe etkileşimli ders uygulaması. Ders notları konu sırası, terminoloji, notasyon ve pedagojik kapsam açısından bağlayıcı kaynaktır.
 
@@ -74,4 +74,4 @@ Yayın sonrasında en az Konu 01, orta bir konu ve Konu 12 için canlı smoke te
 
 ## Kullanım ve lisans notu
 
-Bu depo İKT 207 İstatistik dersi için eğitim materyali olarak hazırlanmıştır. Depoya ayrıca açık kaynak lisansı eklenmediği sürece standart telif hakları geçerlidir; yeniden kullanım ve dağıtım için hak sahibinin belirlediği koşullar esas alınmalıdır.
+Bu depo İKT 217 İstatistik dersi için eğitim materyali olarak hazırlanmıştır. Depoya ayrıca açık kaynak lisansı eklenmediği sürece standart telif hakları geçerlidir; yeniden kullanım ve dağıtım için hak sahibinin belirlediği koşullar esas alınmalıdır.
