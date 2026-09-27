@@ -29,7 +29,7 @@ def test_app_opens_on_topic_01_with_three_tabs() -> None:
 
 def test_every_lab_step_renders_in_both_languages() -> None:
     app = _run_app()
-    for topic, steps in (("konu01", 5), ("konu02", 12)):
+    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10)):
         app.radio(key="selected_topic").set_value(topic).run()
         for language in ("Python", "R"):
             app.segmented_control(key="code_language").set_value(language).run()
@@ -48,6 +48,15 @@ def test_lab_step_shows_the_notes_numbers_in_turkish_format() -> None:
     assert metrics["Ortalama puan"] == "64,0"
 
 
+def test_percentile_step_shows_the_location_and_value_as_in_the_notes() -> None:
+    app = _run_app()
+    app.radio(key="selected_topic").set_value("konu04").run()
+    app.segmented_control(key="konu04_lab_step").set_value(7).run()
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Konum L₆₀"] == "7,8"
+    assert metrics["60. yüzdelik P₆₀"] == "54,8"
+
+
 def test_every_experiment_runs_and_reacts_to_its_sliders() -> None:
     app = _run_app()
     app.slider(key="konu01_sezgi1_c").set_value(3.0).run()
@@ -55,7 +64,7 @@ def test_every_experiment_runs_and_reacts_to_its_sliders() -> None:
     assert leaders["Önde olan şube, kod 1-2-3"] == leaders["Önde olan şube, kod 1-2-c"] == "A"
     app.slider(key="konu01_sezgi1_c").set_value(10.0).run()
     assert {metric.label: metric.value for metric in app.metric}["Önde olan şube, kod 1-2-c"] == "B"
-    for topic in ("konu01", "konu02"):
+    for topic in ("konu01", "konu02", "konu03", "konu04"):
         app.radio(key="selected_topic").set_value(topic).run()
         for number in (1, 2, 3):
             app.segmented_control(key=f"{topic}_sezgi_deney").set_value(number).run()

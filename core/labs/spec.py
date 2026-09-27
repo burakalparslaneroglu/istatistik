@@ -47,9 +47,18 @@ REPRO_DESCRIPTIONS = {
     ),
 }
 
-STATISTICS = ("count", "sum", "mean", "min", "max", "value")
-"""``value``: koşulu sağlayan tek gözlemin değeri (ör. A mağazasının memnuniyeti)."""
+STATISTICS = ("count", "sum", "mean", "median", "mode", "mode_freq", "prod", "min", "max", "value")
+"""``value``: koşulu sağlayan tek gözlemin değeri (ör. A mağazasının memnuniyeti). ``mode``: tek mod
+(birden fazla değer en yüksek frekansa sahipse hata); ``mode_freq``: modun frekansı; ``prod``: çarpım."""
 PERCENT_KINDS = (None, "satir", "sutun")
+CLASS_COLUMNS = (
+    "orta_nokta", "frekans", "goreli", "yuzde", "kumulatif_frekans", "kumulatif_goreli", "kumulatif_yuzde",
+)
+"""Sınıf tablosunun seçilebilir sütunları; ``alt`` ve ``ust`` her zaman vardır."""
+TOTALLED_CLASS_COLUMNS = ("frekans", "goreli", "yuzde")
+PERCENTILE_METHODS = ("ders", "yazilim")
+"""``ders``: L_p = (p/100)(n + 1) ve doğrusal ara değer (Hyndman–Fan tip 6); ``yazilim``: numpy ve R'nin
+varsayılanı (tip 7), 1 + (n − 1)p/100 konumu."""
 TOTAL = "Toplam"
 """Frekans ve çapraz tablolarda toplam satırının/sütununun adı (iki dilde aynı)."""
 
@@ -146,7 +155,7 @@ class NewSample:
 
 @dataclass(frozen=True)
 class Draw:
-    """Sayısal rastgele değişken: normal(ortalama, std. sapma) veya uniform(alt, üst)."""
+    """Sayısal rastgele değişken: normal(ortalama, std. sapma), uniform(alt, üst) veya beta(a, b)."""
 
     frame: str
     name: str
@@ -281,6 +290,63 @@ class CrossTab:
     decimals: int = 1
 
 
+@dataclass(frozen=True)
+class ClassTable:
+    """Nicel bir değişkenin eşit genişlikli sınıflarla frekans dağılımı.
+
+    Sınıflar [a, a + h), [a + h, a + 2h), ...: alt sınır dahil, üst sınır hariç (notlardaki 10 ≤ x < 20
+    yazımı). ``lower`` verilirse ``classes`` sınıf oradan başlar; verilmezse ilk sınıf en küçük değeri
+    içeren h katından başlar ve sınıf sayısı en büyük değeri kapsayacak kadardır.
+
+    Tabloda ``alt`` ve ``ust`` sütunları her zaman vardır; ``columns`` diğerlerini seçer (``CLASS_COLUMNS``):
+    orta nokta m = (alt + üst)/2, frekans f, göreli frekans r = f/n, yüzde p = 100 r, kümülatif frekans
+    F, F/n ve kümülatif yüzde. Satır adları "10 ≤ x < 20"; ``row_labels="ust"`` ise "x < 20" (kümülatif
+    tablo). ``totals`` sonda ``Toplam`` satırı ekler (frekans, göreli ve yüzde sütunlarının toplamı).
+    """
+
+    frame: str
+    variable: str
+    result: str
+    width: float
+    columns: tuple[str, ...]
+    lower: float | None = None
+    classes: int | None = None
+    totals: bool = False
+    row_labels: str = "sinif"
+
+
+@dataclass(frozen=True)
+class StemLeaf:
+    """Gövde–yaprak gösterimi: gövde onlar basamağı, yaprak birler basamağı (negatif olmayan tam sayılar).
+
+    Sonuç tablosunun satırları gövdelerdir (en küçükten en büyüğe, boş gövdeler dahil); sütunlar
+    ``yapraklar`` (küçükten büyüğe, boşlukla ayrılmış) ve ``yaprak_sayisi``.
+    """
+
+    frame: str
+    variable: str
+    result: str
+
+
+@dataclass(frozen=True)
+class Percentile:
+    """p. yüzdelik ``name`` skalerine yazılır; ``location`` verilirse konum da skaler olur.
+
+    ``method="ders"``: L_p = (p/100)(n + 1); L_p tam sayı değilse komşu iki gözlem arasında doğrusal ara
+    değer; L_p ≤ 1 ise en küçük, L_p ≥ n ise en büyük gözlem (Hyndman–Fan tip 6). ``method="yazilim"``:
+    numpy ve R'nin varsayılanı (tip 7), konum 1 + (n − 1)p/100.
+    """
+
+    frame: str
+    variable: str
+    p: float
+    name: str
+    comment: str
+    location: str | None = None
+    method: str = "ders"
+    decimals: int = 2
+
+
 # --- Grafikler -------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -382,6 +448,41 @@ class Histogram:
 
 
 @dataclass(frozen=True)
+class ClassHistogram:
+    """Sınıf tablosunun histogramı: sınıflar sayısal eksende bitişik dikdörtgenler.
+
+    Dikdörtgenin genişliği sınıf genişliği, yüksekliği ``y`` sütunudur (frekans veya yüzde). ``Toplam``
+    satırı çizilmez. ``labels``: değerler dikdörtgenlerin üstüne yazılır (``percent`` ise yüzde işaretiyle).
+    """
+
+    table: str
+    y: str
+    x_label: str
+    y_label: str
+    title: str
+    labels: bool = False
+    percent: bool = False
+    decimals: int = 0
+
+
+@dataclass(frozen=True)
+class DotPlot:
+    """Nokta grafiği: her gözlem bir nokta; aynı değerdeki gözlemler üst üste dizilir.
+
+    ``references``: (skaler adı, etiket) dikey çizgileri (ör. ortalama, medyan). ``x_range``: yatay eksenin
+    sınırları; iki veri setinin yayılımı karşılaştırılırken iki grafikte aynı eksen için (notlardaki gibi).
+    """
+
+    frame: str
+    variable: str
+    x_label: str
+    title: str
+    y_label: str = "Aynı değerdeki gözlem sayısı"
+    references: tuple[tuple[str, str], ...] = ()
+    x_range: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
 class MonteCarlo:
     """``body`` işlemlerini ``reps`` kez tekrarlar; her tekrarda ``collect`` ifadelerini toplar.
 
@@ -415,16 +516,21 @@ Operation = Union[
     GroupSummary,
     FrequencyTable,
     CrossTab,
+    ClassTable,
+    StemLeaf,
+    Percentile,
     BarChart,
     GroupedBarChart,
     CompareBarChart,
     PieChart,
     LineChart,
     Histogram,
+    ClassHistogram,
+    DotPlot,
     MonteCarlo,
 ]
 
-CHARTS = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram)
+CHARTS = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram, ClassHistogram, DotPlot)
 
 
 # --- Notlarla karşılaştırma -------------------------------------------------

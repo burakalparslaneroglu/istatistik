@@ -8,6 +8,7 @@ from core.labs import expr as E
 from core.labs.spec import (
     CHARTS,
     Check,
+    ClassTable,
     CrossTab,
     Derive,
     FrequencyTable,
@@ -25,7 +26,8 @@ LANGUAGES = ("Python", "R")
 COURSE = "IKT 217 İstatistik I"
 PALETTE = ("#107C89", "#B3392F", "#2F9E6B", "#C98A1B", "#6B4C9A", "#07373D")
 """Grafik serilerinin renkleri; uygulamada ve iki dilde aynı sırayla kullanılır."""
-REFERENCE_COLORS = ("#07373D", "#6B4C9A")
+REFERENCE_COLORS = ("#07373D", "#6B4C9A", "#C98A1B")
+"""Dikey başvuru çizgilerinin renkleri (ör. ortalama, medyan, çeyrekler)."""
 
 
 @dataclass(frozen=True)
@@ -84,7 +86,7 @@ def totals_of(spec: LabSpec) -> dict[str, tuple[bool, bool]]:
     found: dict[str, tuple[bool, bool]] = {}
     for step in spec.steps:
         for op in flatten(step.operations):
-            if isinstance(op, FrequencyTable):
+            if isinstance(op, (FrequencyTable, ClassTable)):
                 found[op.result] = (op.totals, False)
             elif isinstance(op, CrossTab):
                 if not op.margins:

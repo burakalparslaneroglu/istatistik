@@ -18,8 +18,8 @@ Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç 
 |---|---|---|---:|---:|---:|---:|
 | 01 | Veri ve İstatistiğe Giriş | Yeni yapı | 5 | 14 | 3 | 24 |
 | 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 12 | 56 | 3 | 24 |
-| 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Eski yapı | — | — | — | — |
-| 04 | Merkezi Eğilim ve Konum Ölçüleri | Eski yapı | — | — | — | — |
+| 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 11 | 85 | 3 | 24 |
+| 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı | 10 | 32 | 3 | 24 |
 | 05 | Değişkenlik, Dağılım ve İlişki | Eski yapı | — | — | — | — |
 | 06 | Olasılığın Temelleri | Eski yapı | — | — | — | — |
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Eski yapı | — | — | — | — |
@@ -43,7 +43,8 @@ sonucun hangi anlamda aynı olduğu yazılır:
 İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları ders notlarındaki basılı
 sayılarla karşılaştırır (`OK` / `HATA`). Gerekli paketler:
 
-- Python 3.12: `pandas`, `numpy`, `matplotlib`.
+- Python 3.12: `pandas`, `numpy`, `matplotlib`. Normal dağılım fonksiyonu kullanan Sezgi deneylerinin kodu
+  ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2).
 - R 4.2 veya üstü: yalnız temel R; ek paket gerekmez. Betik Rscript ile çalıştırılırsa grafikler
   çalışma klasörüne değil R'nin geçici klasörüne yazılır; RStudio'da Plots panelinde görünür.
 
@@ -109,7 +110,7 @@ Kararlı `main` dalı Streamlit Community Cloud üzerinden yayımlanabilir:
 
 Uygulama secret veya dış API kullanmadığından ek bir secret yapılandırması gerektirmez.
 
-Yayın sonrasında en az Konu 01, Konu 02 ve eski yapıdaki bir konu için canlı duman testi yapılmalıdır:
+Yayın sonrasında en az yeni yapıdaki iki konu ve eski yapıdaki bir konu için canlı duman testi yapılmalıdır:
 Uygulama adımları, Sezgi kaydırıcıları, Kendini sına kontrolü, kod dili seçimi ve metin ölçeği.
 
 ## Kullanım ve lisans notu

@@ -21,10 +21,13 @@ from core.labs.spec import (
     BarChart,
     CellTarget,
     Check,
+    ClassHistogram,
+    ClassTable,
     CompareBarChart,
     Count,
     CrossTab,
     Derive,
+    DotPlot,
     Draw,
     DrawCategory,
     FrequencyTable,
@@ -39,6 +42,7 @@ from core.labs.spec import (
     MonteCarlo,
     NewSample,
     Operation,
+    Percentile,
     PieChart,
     Scalar,
     ScalarTable,
@@ -46,15 +50,22 @@ from core.labs.spec import (
     Shape,
     Statistic,
     StatTarget,
+    StemLeaf,
     TableTarget,
     VariableTypes,
 )
+from core.labs.tables import class_edges
 
-_STAT = {"count": "count", "sum": "sum", "mean": "mean", "min": "min", "max": "max", "value": "item"}
+_STAT = {
+    "count": "count()", "sum": "sum()", "mean": "mean()", "median": "median()", "mode": "mode().item()",
+    "mode_freq": "value_counts().max()", "prod": "prod()", "min": "min()", "max": "max()", "value": "item()",
+}
+"""İstatistiğin pandas karşılığı; ``mode().item()`` birden fazla mod varsa hata verir (tek mod beklenir)."""
+_SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv"}
 _FUNCTIONS = {
     "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
-    "minimum": "np.minimum", "round": "np.rint", "floor": "np.floor",
-    "normcdf": "stats.norm.cdf", "normpdf": "stats.norm.pdf",
+    "minimum": "np.minimum", "round": "np.rint", "floor": "np.floor", "cumprod": "np.cumprod",
+    "normcdf": "stats.norm.cdf", "normpdf": "stats.norm.pdf", "norminv": "stats.norm.ppf",
     **{name: f"np.where({{0}} {symbol} {{1}}, 1.0, 0.0)" for name, symbol in E.COMPARISONS.items()},
 }
 
@@ -63,6 +74,26 @@ _NUMBER_TEXT = [
     '    """Grafik etiketleri için Türkçe sayı: ondalık virgül, yüzde işareti sayıdan önce."""',
     '    metin = f"{deger:.{basamak}f}".replace(".", ",")',
     '    return "%" + metin if yuzde else metin',
+]
+_BOUNDARY_TEXT = [
+    "def sinir_metni(deger):",
+    '    """Sınıf sınırının yazımı: ondalık virgül (ör. 12,5)."""',
+    '    return f"{deger:.10g}".replace(".", ",")',
+]
+_PERCENTILE = [
+    "def yuzdelik(degerler, p):",
+    '    """Ders kuralı: L_p = (p/100)(n + 1). L_p tam sayı değilse komşu iki gözlem arasında doğrusal ara',
+    "    değer; L_p ≤ 1 ise en küçük, L_p ≥ n ise en büyük gözlem. np.percentile(degerler, p,",
+    '    method="weibull") aynı sonucu verir; np.percentile varsayılanı farklı bir kural kullanır."""',
+    "    x = np.sort(np.asarray(degerler, dtype=float))",
+    "    n = len(x)",
+    "    konum = p / 100 * (n + 1)",
+    "    if konum <= 1:",
+    "        return x[0]",
+    "    if konum >= n:",
+    "        return x[-1]",
+    "    k = int(np.floor(konum))",
+    "    return x[k - 1] + (konum - k) * (x[k] - x[k - 1])",
 ]
 
 
@@ -83,12 +114,29 @@ def _fstring(value: str) -> str:
 
 
 def _needs_numpy(operations) -> bool:
-    """numpy yalnız rastgele çekiliş, grup etiketi, histogram veya ifade fonksiyonu varsa gerekir."""
+    """numpy yalnız rastgele çekiliş, grup etiketi, histogram, yüzdelik, veriden sınıf sınırı veya ifade
+    fonksiyonu varsa gerekir."""
 
-    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo)
-    if any(isinstance(op, numpy_ops) for op in flatten(operations)):
-        return True
-    return bool(functions_used(operations) - {"normcdf", "normpdf"})
+    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo, Percentile)
+    for op in flatten(operations):
+        if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
+            return True
+    return bool(functions_used(operations) - _SCIPY_FUNCTIONS)
+
+
+def _stat_call(source: str, stat: str) -> str:
+    return f"{source}.{_STAT[stat]}"
+
+
+def _labelled_charts(operations) -> bool:
+    """Değer etiketi yazan grafikler (Türkçe sayı yardımcısı gerekir)."""
+
+    for op in flatten(operations):
+        if isinstance(op, (BarChart, GroupedBarChart, CompareBarChart)):
+            return True
+        if isinstance(op, ClassHistogram) and op.labels:
+            return True
+    return False
 
 
 def _where(frame: str, where) -> str:
@@ -111,7 +159,7 @@ class PythonGenerator(Generator):
         if _needs_numpy(operations):
             lines.append("import numpy as np")
         lines.append("import pandas as pd")
-        if functions_used(operations) & {"normcdf", "normpdf"}:
+        if functions_used(operations) & _SCIPY_FUNCTIONS:
             lines.append("from scipy import stats")
         lines.append("")
         return lines
@@ -127,8 +175,13 @@ class PythonGenerator(Generator):
 
     def helpers(self, operations: tuple[Operation, ...], *, with_checks: bool) -> list[str]:
         lines: list[str] = [""]  # üst düzey fonksiyonlardan önce iki boş satır (PEP 8)
-        if any(isinstance(op, (BarChart, GroupedBarChart, CompareBarChart)) for op in flatten(operations)):
+        flat = flatten(operations)
+        if _labelled_charts(operations):
             lines += _NUMBER_TEXT + ["", ""]
+        if any(isinstance(op, ClassTable) for op in flat):
+            lines += _BOUNDARY_TEXT + ["", ""]
+        if any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
+            lines += _PERCENTILE + ["", ""]
         if with_checks:
             lines += [
                 "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
@@ -194,8 +247,8 @@ class PythonGenerator(Generator):
             ]
         if isinstance(op, Draw):
             a, b = E.format_number(op.first), E.format_number(op.second)
-            call = (f"rng.normal({a}, {b}, size=len({op.frame}))" if op.distribution == "normal"
-                    else f"rng.uniform({a}, {b}, size=len({op.frame}))")
+            method = {"normal": "normal", "uniform": "uniform", "beta": "beta"}[op.distribution]
+            call = f"rng.{method}({a}, {b}, size=len({op.frame}))"
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
@@ -218,7 +271,7 @@ class PythonGenerator(Generator):
                       else f'{op.frame}.loc[{_where(op.frame, op.where)}, "{op.variable}"]')
             return [
                 f"# {op.comment}",
-                f"{op.name} = {source}.{_STAT[op.stat]}()",
+                f"{op.name} = {_stat_call(source, op.stat)}",
                 f'print(f"{_fstring(op.comment)}: {{{op.name}:.{op.decimals}f}}")',
             ]
         if isinstance(op, Scalar):
@@ -242,6 +295,16 @@ class PythonGenerator(Generator):
             return self._frequency(op)
         if isinstance(op, CrossTab):
             return self._crosstab(op)
+        if isinstance(op, ClassTable):
+            return self._class_table(op)
+        if isinstance(op, StemLeaf):
+            return self._stem_leaf(op)
+        if isinstance(op, Percentile):
+            return self._percentile(op)
+        if isinstance(op, ClassHistogram):
+            return self._class_histogram(op)
+        if isinstance(op, DotPlot):
+            return self._dot_plot(op)
         if isinstance(op, BarChart):
             return self._bar(op)
         if isinstance(op, GroupedBarChart):
@@ -404,6 +467,117 @@ class PythonGenerator(Generator):
                 lines.append(f'{op.result}.loc["{TOTAL}"] = {op.result}.sum()')
         return lines + [f"print({op.result}.round({op.decimals}))"]
 
+    def _class_table(self, op: ClassTable) -> list[str]:
+        source = f'{op.frame}["{op.variable}"]'
+        r = op.result
+        if op.lower is None:
+            lines = [
+                f"h = {E.format_number(op.width)}  # sınıf genişliği",
+                f"alt_sinir = np.floor({source}.min() / h) * h  # en küçük değeri içeren h katı",
+                f"k = int(np.floor(({source}.max() - alt_sinir) / h)) + 1  # en büyük değeri de kapsayan sınıf sayısı",
+                "kenarlar = alt_sinir + h * np.arange(k + 1)",
+            ]
+        else:
+            edges = class_edges(None, op.width, op.lower, op.classes)
+            lines = wrapped("kenarlar = [", [E.format_number(value) for value in edges], "]  # sınıf sınırları")
+        if op.row_labels == "ust":
+            labels = 'etiketler = [f"x < {sinir_metni(b)}" for b in kenarlar[1:]]'
+        else:
+            labels = ('etiketler = [f"{sinir_metni(a)} ≤ x < {sinir_metni(b)}" '
+                      'for a, b in zip(kenarlar[:-1], kenarlar[1:])]')
+        lines += [
+            "# Sınıflar [alt, üst): alt sınır dahil, üst sınır hariç",
+            f"siniflar = pd.cut({source}, bins=kenarlar, right=False)",
+            "frekans = siniflar.value_counts(sort=False).to_numpy()  # her sınıftaki gözlem sayısı",
+            "n_sinif = frekans.sum()",
+            labels,
+            f'{r} = pd.DataFrame({{"alt": kenarlar[:-1], "ust": kenarlar[1:]}}, index=etiketler)',
+        ]
+        steps = {
+            "orta_nokta": f'{r}["orta_nokta"] = ({r}["alt"] + {r}["ust"]) / 2  # m = (alt + üst) / 2',
+            "frekans": f'{r}["frekans"] = frekans',
+            "goreli": f'{r}["goreli"] = frekans / n_sinif  # r = f / n',
+            "yuzde": f'{r}["yuzde"] = 100 * (frekans / n_sinif)  # p = 100 r',
+            "kumulatif_frekans": f'{r}["kumulatif_frekans"] = frekans.cumsum()  # F = f₁ + ... + fⱼ',
+            "kumulatif_goreli": f'{r}["kumulatif_goreli"] = frekans.cumsum() / n_sinif',
+            "kumulatif_yuzde": f'{r}["kumulatif_yuzde"] = 100 * (frekans.cumsum() / n_sinif)',
+        }
+        lines += [line for column, line in steps.items() if column in op.columns]
+        if op.totals:
+            summed = [column for column in ("frekans", "goreli", "yuzde") if column in op.columns]
+            lines.append(f'{r}.loc["{TOTAL}"] = {r}[{_list(summed)}].sum()  # alt ve üst sınır toplanmaz')
+        return lines + [f"print({r}.round(3))"]
+
+    def _stem_leaf(self, op: StemLeaf) -> list[str]:
+        r = op.result
+        return [
+            f'sirali = {op.frame}["{op.variable}"].sort_values().astype(int)',
+            "govde, yaprak = sirali // 10, sirali % 10  # gövde: onlar basamağı, yaprak: birler basamağı",
+            "govdeler = range(govde.min(), govde.max() + 1)",
+            f"{r} = pd.DataFrame({{",
+            '    "yapraklar": [" ".join(str(v) for v in yaprak[govde == g]) for g in govdeler],',
+            '    "yaprak_sayisi": [int((govde == g).sum()) for g in govdeler],',
+            "}, index=[str(g) for g in govdeler])",
+            f"for g, satir in {r}.iterrows():",
+            '    print(f"{g} | {satir[\'yapraklar\']}")',
+        ]
+
+    def _percentile(self, op: Percentile) -> list[str]:
+        p = E.format_number(op.p)
+        source = f'{op.frame}["{op.variable}"]'
+        if op.method == "ders":
+            lines = [f"# {op.comment}: ders kuralı L_p = (p/100)(n + 1)"]
+            location = f"{p} / 100 * (len({source}) + 1)"
+            value = f"yuzdelik({source}, {p})"
+        else:
+            lines = [f"# {op.comment}: numpy varsayılanı, konum 1 + (p/100)(n − 1)"]
+            location = f"1 + {p} / 100 * (len({source}) - 1)"
+            value = f"np.percentile({source}, {p})"
+        if op.location is not None:
+            lines.append(f"{op.location} = {location}")
+        lines.append(f"{op.name} = {value}")
+        shown = f"{_fstring(op.comment)}: {{{op.name}:.{op.decimals}f}}"
+        if op.location is not None:
+            shown += f" (konum {{{op.location}:.2f}})"
+        return lines + [f'print(f"{shown}")']
+
+    def _class_histogram(self, op: ClassHistogram) -> list[str]:
+        lines = [
+            f"cizim = {self._chart_table(op.table)}",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            "# Bitişik dikdörtgenler: genişlik sınıf genişliği, yükseklik sınıfın değeri",
+            f'cubuklar = ax.bar(cizim["alt"], cizim["{op.y}"], width=cizim["ust"] - cizim["alt"], align="edge",',
+            f'                  color="{PALETTE[0]}", edgecolor="white")',
+            'ax.set_xticks(list(cizim["alt"]) + [cizim["ust"].iloc[-1]])  # sınıf sınırları',
+        ]
+        if op.labels:
+            percent = ", yuzde=True" if op.percent else ""
+            lines.append(
+                f'ax.bar_label(cubuklar, labels=[sayi_metni(v, {op.decimals}{percent}) for v in cizim["{op.y}"]], '
+                "padding=2)"
+            )
+        return lines + self._axes(op.x_label, op.y_label, op.title)
+
+    def _dot_plot(self, op: DotPlot) -> list[str]:
+        source = f'{op.frame}["{op.variable}"]'
+        lines = [
+            f'yigin = {op.frame}.groupby("{op.variable}").cumcount() + 1  # aynı değerdeki gözlemler üst üste',
+            "fig, ax = plt.subplots(figsize=(8, 3.5))",
+            f'ax.scatter({source}, yigin, color="{PALETTE[0]}", s=45, zorder=3)',
+        ]
+        for index, (name, label) in enumerate(op.references):
+            color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
+            style = ("--", ":", "-.")[index % 3]
+            lines.append(f'ax.axvline({name}, color="{color}", linestyle="{style}", linewidth=2, label={text(label)})')
+        lines += [
+            "ax.set_yticks(range(1, int(yigin.max()) + 1))",
+            "ax.set_ylim(0.3, yigin.max() + 0.7)",
+        ]
+        if op.x_range is not None:
+            low, high = (E.format_number(value) for value in op.x_range)
+            lines.append(f"ax.set_xlim({low}, {high})  # karşılaştırılan grafiklerde aynı yatay eksen")
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
+
     def _chart_table(self, table: str) -> str:
         rows, columns = self.totals.get(table, (False, False))
         drops = []
@@ -529,7 +703,7 @@ class PythonGenerator(Generator):
         if isinstance(target, StatTarget):
             source = (f'{target.frame}["{target.variable}"]' if target.where is None
                       else f'{target.frame}.loc[{_where(target.frame, target.where)}, "{target.variable}"]')
-            return f"{source}.{_STAT[target.stat]}()"
+            return _stat_call(source, target.stat)
         if isinstance(target, ScalarTarget):
             return target.name
         if isinstance(target, TableTarget):

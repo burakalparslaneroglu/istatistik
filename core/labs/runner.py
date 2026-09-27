@@ -19,10 +19,13 @@ from core.labs.spec import (
     BarChart,
     CellTarget,
     Check,
+    ClassHistogram,
+    ClassTable,
     CompareBarChart,
     Count,
     CrossTab,
     Derive,
+    DotPlot,
     Draw,
     DrawCategory,
     FrequencyTable,
@@ -38,6 +41,7 @@ from core.labs.spec import (
     MonteCarlo,
     NewSample,
     Operation,
+    Percentile,
     PieChart,
     Scalar,
     ScalarTable,
@@ -45,6 +49,7 @@ from core.labs.spec import (
     Shape,
     Statistic,
     StatTarget,
+    StemLeaf,
     TableTarget,
     VariableTypes,
 )
@@ -105,6 +110,17 @@ def statistic(series: pd.Series, stat: str) -> float:
         return float(series.sum())
     if stat == "mean":
         return float(series.mean())
+    if stat == "median":
+        return float(series.median())
+    if stat == "mode":
+        modes = series.mode()
+        if len(modes) != 1:
+            raise ValueError(f"Tek bir mod beklenirken {len(modes)} değer en yüksek frekansa sahip.")
+        return float(modes.iloc[0])
+    if stat == "mode_freq":
+        return float(series.value_counts().max())
+    if stat == "prod":
+        return float(series.prod())
     if stat == "min":
         return float(series.min())
     if stat == "max":
@@ -186,6 +202,8 @@ def execute(op: Operation, state: LabState) -> None:
             frame[op.name] = rng.normal(op.first, op.second, size=len(frame))
         elif op.distribution == "uniform":
             frame[op.name] = rng.uniform(op.first, op.second, size=len(frame))
+        elif op.distribution == "beta":
+            frame[op.name] = rng.beta(op.first, op.second, size=len(frame))
         else:
             raise ValueError(f"Desteklenmeyen dağılım: {op.distribution}")
     elif isinstance(op, DrawCategory):
@@ -221,6 +239,18 @@ def execute(op: Operation, state: LabState) -> None:
         state.tables[op.result] = T.crosstab(
             frame, op.row, op.column, op.row_order, op.column_order, percent=op.percent, margins=op.margins
         )
+    elif isinstance(op, ClassTable):
+        values = state.frames[op.frame][op.variable]
+        edges = T.class_edges(values, op.width, op.lower, op.classes)
+        state.tables[op.result] = T.class_table(values, edges, op.columns, totals=op.totals,
+                                                row_labels=op.row_labels)
+    elif isinstance(op, StemLeaf):
+        state.tables[op.result] = T.stem_leaf(state.frames[op.frame][op.variable])
+    elif isinstance(op, Percentile):
+        values = state.frames[op.frame][op.variable]
+        state.scalars[op.name] = T.percentile(values, op.p, op.method)
+        if op.location is not None:
+            state.scalars[op.location] = T.percentile_location(len(values), op.p, op.method)
     elif isinstance(op, BarChart):
         state.plots[plot_key(op)] = _bar_data(op, state)
     elif isinstance(op, GroupedBarChart):
@@ -236,10 +266,22 @@ def execute(op: Operation, state: LabState) -> None:
         state.tables[op.result] = table
         state.plots[plot_key(op)] = table
     elif isinstance(op, LineChart):
-        frame = state.frames[op.frame]
+        # Kaynak bir veri çerçevesi ya da sonuç tablosu olabilir (ör. kümülatif yüzde eğrisi).
+        frame = state.frames[op.frame] if op.frame in state.frames else without_total(state.tables[op.frame])
         state.plots[plot_key(op)] = frame[[op.x, op.y]].copy()
     elif isinstance(op, Histogram):
         state.plots[plot_key(op)] = state.tables[op.table][[column for column, _ in op.columns]].copy()
+    elif isinstance(op, ClassHistogram):
+        table = without_total(state.tables[op.table])
+        state.plots[plot_key(op)] = table[["alt", "ust", op.y]].copy()
+    elif isinstance(op, DotPlot):
+        values = state.frames[op.frame][op.variable]
+        if op.x_range is not None and not (op.x_range[0] < values.min() and values.max() < op.x_range[1]):
+            raise ValueError(f"{op.title}: eksen sınırları {op.x_range} bütün gözlemleri kapsamıyor.")
+        state.plots[plot_key(op)] = pd.DataFrame({
+            "deger": values.to_numpy(dtype=float),
+            "yigin": values.groupby(values).cumcount().to_numpy() + 1,
+        })
     elif isinstance(op, MonteCarlo):
         _monte_carlo(op, state)
     else:

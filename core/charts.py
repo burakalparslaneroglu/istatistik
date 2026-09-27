@@ -15,15 +15,18 @@ from core.codegen.base import PALETTE, REFERENCE_COLORS
 from core.labs.runner import LabState, plot_key
 from core.labs.spec import (
     BarChart,
+    ClassHistogram,
     CompareBarChart,
+    DotPlot,
     GroupedBarChart,
     Histogram,
     LineChart,
     Operation,
     PieChart,
 )
+from core.labs.tables import boundary_label
 
-CHART_TYPES = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram)
+CHART_TYPES = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram, ClassHistogram, DotPlot)
 
 
 def tr_number(value: float, decimals: int = 0, percent: bool = False) -> str:
@@ -138,7 +141,9 @@ def _line(op: LineChart, data: pd.DataFrame) -> go.Figure:
             marker={"size": 8}, hovertemplate="%{x}: %{y}<extra></extra>",
         )
     )
-    figure.update_xaxes(dtick=1)
+    steps = np.diff(np.unique(data[op.x].to_numpy(dtype=float)))
+    if len(steps) and np.allclose(steps, steps[0]):
+        figure.update_xaxes(dtick=float(steps[0]))  # eşit aralıklı yatay eksen: her değer bir işaret
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
@@ -168,6 +173,60 @@ def _histogram(op: Histogram, data: pd.DataFrame) -> go.Figure:
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title="Tekrar sayısı")
 
 
+def _reference_lines(figure: go.Figure, references: list[tuple[float, str]]) -> None:
+    """Dikey başvuru çizgileri; yardımcı eksende (0–1) tam boy çizilir ve açıklamada görünür."""
+
+    for index, (value, label) in enumerate(references):
+        figure.add_trace(
+            go.Scatter(
+                x=[value, value], y=[0, 1], mode="lines", name=f"{label}: {tr_number(value, 2)}", yaxis="y2",
+                hoverinfo="skip",
+                line={"color": REFERENCE_COLORS[index % len(REFERENCE_COLORS)], "width": 2.5,
+                      "dash": ("dash", "dot", "dashdot")[index % 3]},
+            )
+        )
+    if references:
+        figure.update_layout(yaxis2={"overlaying": "y", "range": [0, 1], "visible": False})
+
+
+def _class_histogram(op: ClassHistogram, data: pd.DataFrame) -> go.Figure:
+    """Sınıflar sayısal eksende bitişik: dikdörtgenin genişliği sınıf genişliğidir."""
+
+    lower, upper = data["alt"].to_numpy(dtype=float), data["ust"].to_numpy(dtype=float)
+    values = data[op.y].to_numpy(dtype=float)
+    labels = [f"{boundary_label(a)} ≤ x < {boundary_label(b)}" for a, b in zip(lower, upper)]
+    shown = [tr_number(value, op.decimals, op.percent) for value in values]
+    figure = go.Figure(
+        go.Bar(
+            x=(lower + upper) / 2, y=values, width=upper - lower, marker_color=PALETTE[0],
+            marker_line={"color": "white", "width": 1}, customdata=labels, text=shown if op.labels else None,
+            textposition="outside", cliponaxis=False, hovertext=shown,
+            hovertemplate="%{customdata}: %{hovertext}<extra></extra>",
+        )
+    )
+    edges = np.append(lower, upper[-1])
+    figure.update_xaxes(tickvals=edges, ticktext=[boundary_label(edge) for edge in edges])
+    figure.update_yaxes(rangemode="tozero")
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _dot_plot(op: DotPlot, data: pd.DataFrame, state: LabState) -> go.Figure:
+    figure = go.Figure(
+        go.Scatter(
+            x=data["deger"], y=data["yigin"], mode="markers", marker={"color": PALETTE[0], "size": 11},
+            name="Gözlem", showlegend=False,
+            hovertemplate="%{x}<extra></extra>",
+        )
+    )
+    _reference_lines(figure, [(float(state.scalars[name]), label) for name, label in op.references])
+    top = int(data["yigin"].max()) if len(data) else 1
+    figure.update_layout(yaxis={"range": [0.3, top + 0.7], "tickvals": list(range(1, top + 1))},
+                         legend={"orientation": "h", "y": -0.3})
+    if op.x_range is not None:
+        figure.update_xaxes(range=list(op.x_range))
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
 def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Figure:
     """Bir grafik işleminin Plotly karşılığı; ``label`` seri başlıkları için Türkçe ad verir."""
 
@@ -189,4 +248,8 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
         return _line(op, data)
     if isinstance(op, Histogram):
         return _histogram(op, data)
+    if isinstance(op, ClassHistogram):
+        return _class_histogram(op, data)
+    if isinstance(op, DotPlot):
+        return _dot_plot(op, data, state)
     raise TypeError(f"Grafik türü tanınmıyor: {type(op).__name__}")

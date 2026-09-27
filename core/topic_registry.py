@@ -13,8 +13,14 @@ TOPICS: tuple[TopicMetadata, ...] = (
         "konu02", 2, "Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi", "Kategorik Verilerin Özetlenmesi",
         "Kategorik bir veri seti hangi tablo ve grafikle, hangi paydayla doğru özetlenir?",
     ),
-    TopicMetadata("konu03", 3, "Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi", "Nicel Verilerin Özetlenmesi"),
-    TopicMetadata("konu04", 4, "Merkezi Eğilim ve Konum Ölçüleri", "Merkezi Eğilim ve Konum Ölçüleri"),
+    TopicMetadata(
+        "konu03", 3, "Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi", "Nicel Verilerin Özetlenmesi",
+        "Nicel bir değişkenin değerleri nerede yoğunlaşır ve bunu hangi sınıflarla, hangi grafikle göstermeliyiz?",
+    ),
+    TopicMetadata(
+        "konu04", 4, "Merkezi Eğilim ve Konum Ölçüleri", "Merkezi Eğilim ve Konum Ölçüleri",
+        "Bir veri setinin merkezini hangi ölçü en iyi özetler ve bir gözlemin göreli konumu nasıl belirlenir?",
+    ),
     TopicMetadata("konu05", 5, "Değişkenlik, Dağılım ve İlişki", "Değişkenlik, Dağılım ve İlişki"),
     TopicMetadata("konu06", 6, "Olasılığın Temelleri", "Olasılığın Temelleri"),
     TopicMetadata(

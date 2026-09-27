@@ -53,7 +53,8 @@ BINARY_OPS = ("+", "-", "*", "/", "^")
 COMPARISONS = {"le": "<=", "lt": "<", "ge": ">=", "gt": ">", "eq": "==", "ne": "!="}
 """Karşılaştırma fonksiyonları: koşul sağlanırsa 1, değilse 0 (gösterge değişkeni)."""
 FUNCTIONS = (
-    "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", *COMPARISONS,
+    "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", "norminv",
+    "cumprod", *COMPARISONS,
 )
 _BINARY_FUNCTIONS = ("maximum", "minimum", *COMPARISONS)
 _PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}
@@ -140,6 +141,18 @@ def normpdf(a) -> Call:
     """Standart normal yoğunluk φ(a)."""
 
     return Call("normpdf", (_wrap(a),))
+
+
+def norminv(a) -> Call:
+    """Standart normal dağılımın ters fonksiyonu Φ⁻¹(a) (ör. Φ⁻¹(0,975) ≈ 1,96)."""
+
+    return Call("norminv", (_wrap(a),))
+
+
+def cumprod(a) -> Call:
+    """Birikimli çarpım: bir değişkenin ilk gözlemden o gözleme kadar değerlerinin çarpımı."""
+
+    return Call("cumprod", (_wrap(a),))
 
 
 def compare(name: str, a, b) -> Call:
@@ -272,6 +285,10 @@ def evaluate(
             return stats.norm.cdf(values[0])
         if expr.fn == "normpdf":
             return stats.norm.pdf(values[0])
+        if expr.fn == "norminv":
+            return stats.norm.ppf(values[0])
+        if expr.fn == "cumprod":
+            return np.cumprod(values[0])
         if expr.fn in COMPARISONS:
             left, right = np.asarray(values[0]), np.asarray(values[1])
             outcome = {

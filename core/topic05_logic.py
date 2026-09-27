@@ -4,7 +4,7 @@ from typing import Iterable
 
 import numpy as np
 
-from core.topic04_logic import percentile_course_rule
+from core.labs.tables import percentile
 
 
 SUPPLIER_A = np.array([9, 10, 10, 10, 11], dtype=float)
@@ -57,9 +57,9 @@ def iqr_summary(values: Iterable[float]) -> dict[str, float]:
     arr = np.asarray(list(values), dtype=float)
     if arr.size == 0:
         raise ValueError("Veri seti boş olamaz.")
-    _, q1 = percentile_course_rule(arr, 25)
-    _, median = percentile_course_rule(arr, 50)
-    _, q3 = percentile_course_rule(arr, 75)
+    q1 = percentile(arr, 25)
+    median = percentile(arr, 50)
+    q3 = percentile(arr, 75)
     iqr = q3 - q1
     lower = q1 - 1.5 * iqr
     upper = q3 + 1.5 * iqr

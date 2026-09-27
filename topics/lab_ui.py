@@ -20,6 +20,7 @@ from core.labs.runner import LabRun, LabState, run_lab, run_operations
 from core.labs.spec import (
     REPRO_DESCRIPTIONS,
     TOTAL,
+    ClassTable,
     Count,
     CrossTab,
     FrequencyTable,
@@ -29,11 +30,13 @@ from core.labs.spec import (
     LabSpec,
     LabStep,
     MapCodes,
+    Percentile,
     PieChart,
     Scalar,
     ScalarTable,
     Shape,
     Statistic,
+    StemLeaf,
     VariableTypes,
 )
 
@@ -44,6 +47,14 @@ _COLUMN_LABELS = {
     "yuzde": "Yüzde frekans",
     "aci": "Dilim açısı (°)",
     "sayi": "Sayı",
+    "alt": "Alt sınır",
+    "ust": "Üst sınır",
+    "orta_nokta": "Orta nokta",
+    "kumulatif_frekans": "Kümülatif frekans",
+    "kumulatif_goreli": "Kümülatif göreli frekans",
+    "kumulatif_yuzde": "Kümülatif yüzde",
+    "yapraklar": "Yapraklar",
+    "yaprak_sayisi": "Yaprak sayısı",
     TOTAL: TOTAL,
 }
 
@@ -52,6 +63,16 @@ _COLUMN_LABELS = {
 
 def _count(value: float) -> str:
     return f"{int(round(value)):,}".replace(",", ".")
+
+
+def _blank_if_missing(formatter: Callable[[float], str]) -> Callable[[float], str]:
+    """Toplam satırında toplanmayan hücreler (ör. sınıf sınırları) boş gösterilir."""
+
+    return lambda value: "" if pd.isna(value) else formatter(value)
+
+
+def _boundary(value: float) -> str:
+    return tr_number(value, 0 if float(value).is_integer() else 2)
 
 
 def _formatted(table: pd.DataFrame, formats: dict[str, Callable[[float], str]], index_label: str,
@@ -85,6 +106,17 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
     if isinstance(op, PieChart):
         formats = {op.column: lambda v: tr_number(v, 3), "aci": lambda v: tr_number(v, 1)}
         return _formatted(table, formats, "Kategori", label)
+    if isinstance(op, ClassTable):
+        formats = {
+            "orta_nokta": _boundary, "frekans": _count, "goreli": lambda v: tr_number(v, 3),
+            "yuzde": lambda v: tr_number(v, 1, True), "kumulatif_frekans": _count,
+            "kumulatif_goreli": lambda v: tr_number(v, 3), "kumulatif_yuzde": lambda v: tr_number(v, 1, True),
+        }
+        shown = table.drop(columns=["alt", "ust"])  # sınıf sınırları satır adında yazılı
+        heading = "Sınıf" if op.row_labels == "sinif" else "Sınır"
+        return _formatted(shown, {k: _blank_if_missing(f) for k, f in formats.items()}, heading, label)
+    if isinstance(op, StemLeaf):
+        return _formatted(table, {"yaprak_sayisi": _count}, "Gövde", label)
     if isinstance(op, ScalarTable):
         return pd.DataFrame({"Büyüklük": table.index, "Değer": [tr_number(v, op.decimals) for v in table["deger"]]})
     if isinstance(op, GroupSummary):
@@ -112,17 +144,46 @@ def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: na
     return kind
 
 
-def show_table(shown: pd.DataFrame) -> None:
-    height = min(35 * (len(shown) + 1) + 3, 458)
+def show_table(shown) -> None:
+    """Tabloyu gösterir; ``shown`` bir DataFrame ya da Türkçe sayı biçimli Styler'dır (bkz. ``_frame``)."""
+
+    rows = len(shown) if isinstance(shown, pd.DataFrame) else len(shown.data)
+    # 16 satıra kadar (ör. 5 dakikalık 14 sınıf ve Toplam) tablo kaydırmadan görünür; daha uzun ham veri kayar.
+    height = min(35 * (rows + 1) + 3, 598)
     st.dataframe(shown, hide_index=True, width="stretch", height=height)
 
 
-def _frame(frame: pd.DataFrame, label: Callable[[str], str]) -> pd.DataFrame:
+def _decimals(values: pd.Series) -> int:
+    """Kesirli bir sütunun gösterim basamağı: en az 2 (notlardaki 0,25 ve 17,50 gibi), en çok 4."""
+
+    for decimals in (2, 3):
+        if np.allclose(values, np.round(values, decimals), rtol=0, atol=1e-9):
+            return decimals
+    return 4
+
+
+def _frame(frame: pd.DataFrame, label: Callable[[str], str]):
+    """Veri çerçevesinin ekran biçimi: tam sayı değerli sütunlar tam sayı, kesirli sütunlar ondalık virgülle.
+
+    Kesirli sütunlar Styler ile biçimlenir; sütun sayısal kaldığı için sağa hizalı görünür.
+    """
+
     shown = frame.copy()
+    formats: dict[str, Callable[[float], str]] = {}
     for column in shown.columns:
-        if shown[column].dtype.kind == "f" and np.allclose(shown[column], np.round(shown[column])):
+        if shown[column].dtype.kind != "f":
+            continue
+        if np.allclose(shown[column], np.round(shown[column]), rtol=0, atol=1e-9):
             shown[column] = shown[column].round().astype(int)
-    return shown.rename(columns=lambda name: _COLUMN_LABELS.get(str(name), label(str(name))))
+            if (shown[column] < 0).any():  # tipografik eksi: −10
+                formats[column] = lambda value: tr_number(value, 0)
+        else:
+            formats[column] = lambda value, decimals=_decimals(shown[column]): tr_number(value, decimals)
+    rename = {column: _COLUMN_LABELS.get(str(column), label(str(column))) for column in shown.columns}
+    shown = shown.rename(columns=rename)
+    if not formats:
+        return shown
+    return shown.style.format({rename[column]: formatter for column, formatter in formats.items()})
 
 
 # --- Adım gezinimi -----------------------------------------------------------------
@@ -156,10 +217,18 @@ def _render_navigation(spec: LabSpec) -> LabStep:
 
 # --- Sonuçlar ----------------------------------------------------------------------
 
-_METRICS = (Shape, Count, Statistic, Scalar)
+_METRICS = (Shape, Count, Statistic, Scalar, Percentile)
+_SUBSCRIPTS = str.maketrans("0123456789,", "₀₁₂₃₄₅₆₇₈₉,")
 
 
 def _metrics(op, state: LabState) -> list[tuple[str, str]]:
+    if isinstance(op, Percentile):
+        items = []
+        if op.location is not None:
+            index = tr_number(op.p, 0 if float(op.p).is_integer() else 1).translate(_SUBSCRIPTS)
+            location = tr_number(state.scalars[op.location], 2).rstrip("0").rstrip(",")  # 7,80 → 7,8
+            items.append((f"Konum L{index}", location))
+        return items + [(op.comment, tr_number(state.scalars[op.name], op.decimals))]
     if isinstance(op, Shape):
         return [("Gözlem sayısı n", _count(state.scalars[op.observations])),
                 ("Değişken sayısı", _count(state.scalars[op.variables]))]
@@ -191,10 +260,11 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
         if isinstance(op, InlineData):
             frame = state.frames[op.frame]
             st.markdown(f"**{op.comment}**")
-            if op.layout and len(op.columns) == 1 and len(frame) > 12:
+            if op.layout and len(op.columns) == 1 and len(frame) % op.layout == 0:
+                # Notlardaki gibi satır başına ``layout`` değer; sütun başlıkları satır içindeki sıradır.
                 values = frame[op.columns[0]].to_numpy()
                 grid = pd.DataFrame(values.reshape(-1, op.layout), columns=[str(i) for i in range(1, op.layout + 1)])
-                show_table(grid)
+                show_table(_frame(grid, str))
             else:
                 show_table(_frame(frame, label))
         elif isinstance(op, FromCounts):
@@ -209,7 +279,7 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
         elif isinstance(op, CrossTab):
             st.markdown(crosstab_caption(op, label))
             show_table(display_table(op, state.tables[op.result], label))
-        elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary)):
+        elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf)):
             show_table(display_table(op, state.tables[op.result], label))
         if isinstance(op, PieChart):
             show_figure(figure_for(op, state, label), key=f"{key_prefix}_grafik_{index}")

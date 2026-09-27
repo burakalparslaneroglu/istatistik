@@ -6,11 +6,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from core.codegen.base import text, wrapped
+from core.codegen.base import render_step, text, wrapped
 from core.labs import expr as E
 from core.labs import tables as T
 from core.labs.runner import LabState, execute, run_operations
-from core.labs.spec import TOTAL, Check, CrossTab, DrawCategory, FrequencyTable, FromCounts, NewSample
+from core.labs.spec import TOTAL, Check, CrossTab, DotPlot, DrawCategory, FrequencyTable, FromCounts, NewSample
 
 
 def test_frequency_table_follows_the_given_order_and_adds_totals() -> None:
@@ -46,6 +46,67 @@ def test_crosstab_denominators() -> None:
     assert rows.loc["A", "v"] == pytest.approx(75.0) and rows.loc["B", TOTAL] == pytest.approx(100.0)
     columns = T.crosstab(frame, "r", "c", ("A", "B"), ("u", "v"), percent="sutun", margins=True)
     assert columns.loc["B", "u"] == pytest.approx(200 / 3) and columns.loc[TOTAL, "v"] == pytest.approx(100.0)
+
+
+def test_class_table_puts_boundary_values_in_the_upper_class_and_adds_totals() -> None:
+    values = pd.Series([10.0, 19.0, 20.0, 29.0, 30.0])
+    edges = T.class_edges(values, 10)
+    assert list(edges) == [10.0, 20.0, 30.0, 40.0]
+    table = T.class_table(values, edges, ("frekans", "yuzde", "kumulatif_frekans"), totals=True)
+    assert list(table.index) == ["10 ≤ x < 20", "20 ≤ x < 30", "30 ≤ x < 40", TOTAL]
+    assert list(table["frekans"]) == [2, 2, 1, 5]
+    assert table.loc[TOTAL, "yuzde"] == pytest.approx(100.0)
+    assert np.isnan(table.loc[TOTAL, "kumulatif_frekans"])
+    cumulative = T.class_table(values, edges, ("kumulatif_yuzde",), row_labels="ust")
+    assert list(cumulative.index) == ["x < 20", "x < 30", "x < 40"]
+    assert list(cumulative["kumulatif_yuzde"]) == pytest.approx([40.0, 80.0, 100.0])
+
+
+def test_class_table_rejects_unknown_columns_and_needs_a_class_count_with_a_lower_edge() -> None:
+    with pytest.raises(ValueError, match="Tanınmayan"):
+        T.class_table(pd.Series([1.0]), np.array([0.0, 10.0]), ("medyan",))
+    with pytest.raises(ValueError, match="sınıf sayısı"):
+        T.class_edges(pd.Series([1.0]), 10, lower=0)
+
+
+def test_boundary_labels_use_a_decimal_comma_without_padding() -> None:
+    assert T.boundary_label(12.5) == "12,5" and T.boundary_label(20.0) == "20"
+
+
+def test_stem_leaf_keeps_empty_stems() -> None:
+    stems = T.stem_leaf(pd.Series([12.0, 15.0, 31.0]))
+    assert list(stems.index) == ["1", "2", "3"]
+    assert list(stems["yapraklar"]) == ["2 5", "", "1"]
+    assert list(stems["yaprak_sayisi"]) == [2, 0, 1]
+    with pytest.raises(ValueError):
+        T.stem_leaf(pd.Series([1.5]))
+
+
+def test_percentile_locations_of_both_rules() -> None:
+    assert T.percentile_location(12, 60) == pytest.approx(7.8)
+    assert T.percentile_location(12, 60, "yazilim") == pytest.approx(7.6)
+    with pytest.raises(ValueError):
+        T.percentile_location(12, 60, "tip9")
+
+
+def test_dot_plot_axis_range_is_shared_by_all_three_renderers() -> None:
+    from core.charts import figure_for
+    from core.labs.konu04 import KONU04_LAB, SPREAD_RANGE
+
+    step = KONU04_LAB.step(10)
+    plots = [op for op in step.operations if isinstance(op, DotPlot)]
+    assert len(plots) == 2 and all(op.x_range == SPREAD_RANGE for op in plots)
+    state = run_operations(KONU04_LAB.operations_through(10))
+    assert all(tuple(figure_for(op, state).layout.xaxis.range) == SPREAD_RANGE for op in plots)
+    assert render_step(KONU04_LAB, 10, "Python").count("ax.set_xlim(5, 55)") == 2
+    assert render_step(KONU04_LAB, 10, "R").count("xlim = c(5, 55)") == 2
+
+
+def test_dot_plot_axis_range_must_cover_the_data() -> None:
+    state = LabState()
+    execute(FromCounts("f", ("x",), ((10.0, 1), (50.0, 1)), "iki gözlem"), state)
+    with pytest.raises(ValueError, match="kapsamıyor"):
+        execute(DotPlot("f", "x", "Değer", "Dar eksen", x_range=(20, 60)), state)
 
 
 def test_thresholds_end_exactly_at_one_and_validate() -> None:

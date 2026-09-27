@@ -27,7 +27,7 @@ TOPIC_MODULES = {
 }
 
 # Uygulama + Sezgi + Kendini sına yapısına geçmiş konular: kod iki dilde, tek tanımdan üretilir.
-MIGRATED_TOPICS = {"konu01", "konu02"}
+MIGRATED_TOPICS = {"konu01", "konu02", "konu03", "konu04"}
 
 
 def test_registry_has_exact_course_order() -> None:

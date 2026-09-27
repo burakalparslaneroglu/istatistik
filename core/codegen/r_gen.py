@@ -21,10 +21,13 @@ from core.labs.spec import (
     BarChart,
     CellTarget,
     Check,
+    ClassHistogram,
+    ClassTable,
     CompareBarChart,
     Count,
     CrossTab,
     Derive,
+    DotPlot,
     Draw,
     DrawCategory,
     FrequencyTable,
@@ -39,6 +42,7 @@ from core.labs.spec import (
     MonteCarlo,
     NewSample,
     Operation,
+    Percentile,
     PieChart,
     Scalar,
     ScalarTable,
@@ -46,23 +50,45 @@ from core.labs.spec import (
     Shape,
     Statistic,
     StatTarget,
+    StemLeaf,
     TableTarget,
     VariableTypes,
 )
+from core.labs.tables import class_edges
 
-_STAT = {"sum": "sum", "mean": "mean", "min": "min", "max": "max", "count": "length"}
+_STAT = {"sum": "sum", "mean": "mean", "median": "median", "prod": "prod", "min": "min", "max": "max",
+         "count": "length"}
 _FUNCTIONS = {
     "log": "log", "exp": "exp", "sqrt": "sqrt", "abs": "abs", "maximum": "pmax", "minimum": "pmin",
-    "round": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm",
+    "round": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm", "norminv": "qnorm",
+    "cumprod": "cumprod",
     **{name: f"as.numeric({{0}} {symbol} {{1}})" for name, symbol in E.COMPARISONS.items()},
 }
-_REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3")))
+_REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3", "4")))
 
 _NUMBER_TEXT = [
     "# Grafik etiketleri için Türkçe sayı: ondalık virgül, yüzde işareti sayıdan önce",
     "sayi_metni <- function(deger, basamak = 0, yuzde = FALSE) {",
     '  metin <- formatC(deger, format = "f", digits = basamak, decimal.mark = ",")',
     '  if (yuzde) paste0("%", metin) else metin',
+    "}",
+]
+_BOUNDARY_TEXT = [
+    "# Sınıf sınırının yazımı: ondalık virgül (ör. 12,5)",
+    'sinir_metni <- function(deger) trimws(formatC(deger, format = "fg", digits = 10, decimal.mark = ","))',
+]
+_PERCENTILE = [
+    "# Ders kuralı: L_p = (p/100)(n + 1). L_p tam sayı değilse komşu iki gözlem arasında doğrusal ara değer;",
+    "# L_p <= 1 ise en küçük, L_p >= n ise en büyük gözlem. quantile(x, p / 100, type = 6) aynı sonucu verir;",
+    "# R'nin varsayılanı (type = 7) farklı bir kural kullanır.",
+    "yuzdelik <- function(x, p) {",
+    "  x <- sort(x)",
+    "  n <- length(x)",
+    "  konum <- p / 100 * (n + 1)",
+    "  if (konum <= 1) return(x[1])",
+    "  if (konum >= n) return(x[n])",
+    "  k <- floor(konum)",
+    "  x[k] + (konum - k) * (x[k + 1] - x[k])",
     "}",
 ]
 
@@ -100,6 +126,11 @@ def _statistic(values: str, stat: str) -> str:
         return values
     if stat == "count":
         return f"sum(!is.na({values}))"
+    if stat == "mode":
+        # En yüksek frekanslı değer(ler); tek mod beklenir
+        return f"as.numeric(names(which(table({values}) == max(table({values})))))"
+    if stat == "mode_freq":
+        return f"max(table({values}))"
     return f"{_STAT[stat]}({values})"
 
 
@@ -127,9 +158,14 @@ class RGenerator(Generator):
 
     def helpers(self, operations: tuple[Operation, ...], *, with_checks: bool) -> list[str]:
         lines: list[str] = []
+        flat = flatten(operations)
         labelled = (BarChart, GroupedBarChart, CompareBarChart, PieChart)
-        if any(isinstance(op, labelled) for op in flatten(operations)):
+        if any(isinstance(op, labelled) or (isinstance(op, ClassHistogram) and op.labels) for op in flat):
             lines += _NUMBER_TEXT + [""]
+        if any(isinstance(op, (ClassTable, ClassHistogram)) for op in flat):
+            lines += _BOUNDARY_TEXT + [""]
+        if any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
+            lines += _PERCENTILE + [""]
         if with_checks:
             lines += [
                 "# Hesaplanan değeri ders notlarındaki basılı değerle karşılaştırır",
@@ -183,8 +219,11 @@ class RGenerator(Generator):
             ]
         if isinstance(op, Draw):
             a, b = E.format_number(op.first), E.format_number(op.second)
-            call = (f"rnorm(nrow({op.frame}), mean = {a}, sd = {b})" if op.distribution == "normal"
-                    else f"runif(nrow({op.frame}), min = {a}, max = {b})")
+            call = {
+                "normal": f"rnorm(nrow({op.frame}), mean = {a}, sd = {b})",
+                "uniform": f"runif(nrow({op.frame}), min = {a}, max = {b})",
+                "beta": f"rbeta(nrow({op.frame}), shape1 = {a}, shape2 = {b})",
+            }[op.distribution]
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {call}"]
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
@@ -228,6 +267,16 @@ class RGenerator(Generator):
             return self._frequency(op)
         if isinstance(op, CrossTab):
             return self._crosstab(op)
+        if isinstance(op, ClassTable):
+            return self._class_table(op)
+        if isinstance(op, StemLeaf):
+            return self._stem_leaf(op)
+        if isinstance(op, Percentile):
+            return self._percentile(op)
+        if isinstance(op, ClassHistogram):
+            return self._class_histogram(op)
+        if isinstance(op, DotPlot):
+            return self._dot_plot(op)
         if isinstance(op, BarChart):
             return self._bar(op)
         if isinstance(op, GroupedBarChart):
@@ -416,6 +465,136 @@ class RGenerator(Generator):
             if op.margins:
                 lines.append(f'{op.result}["{TOTAL}", ] <- colSums({op.result})')
         return lines + [f"print(round({op.result}, {op.decimals}))"]
+
+    def _class_table(self, op: ClassTable) -> list[str]:
+        source = f"{op.frame}${op.variable}"
+        r = op.result
+        if op.lower is None:
+            lines = [
+                f"h <- {E.format_number(op.width)}  # sınıf genişliği",
+                f"alt_sinir <- floor(min({source}) / h) * h  # en küçük değeri içeren h katı",
+                f"k <- floor((max({source}) - alt_sinir) / h) + 1  # en büyük değeri de kapsayan sınıf sayısı",
+                "kenarlar <- alt_sinir + h * (0:k)",
+            ]
+        else:
+            edges = class_edges(None, op.width, op.lower, op.classes)
+            lines = wrapped("kenarlar <- c(", [E.format_number(value) for value in edges], ")  # sınıf sınırları")
+        if op.row_labels == "ust":
+            labels = 'paste("x <", sinir_metni(kenarlar[-1]))'
+        else:
+            labels = 'paste(sinir_metni(head(kenarlar, -1)), "≤ x <", sinir_metni(kenarlar[-1]))'
+        lines += [
+            "# Sınıflar [alt, üst): alt sınır dahil, üst sınır hariç",
+            f"siniflar <- cut({source}, breaks = kenarlar, right = FALSE)",
+            "frekans <- as.vector(table(siniflar))  # her sınıftaki gözlem sayısı",
+            "n_sinif <- sum(frekans)",
+            f"{r} <- data.frame(alt = head(kenarlar, -1), ust = kenarlar[-1],",
+            f"{' ' * len(r)}              row.names = {labels})",
+        ]
+        steps = {
+            "orta_nokta": f"{r}$orta_nokta <- ({r}$alt + {r}$ust) / 2  # m = (alt + üst) / 2",
+            "frekans": f"{r}$frekans <- frekans",
+            "goreli": f"{r}$goreli <- frekans / n_sinif  # r = f / n",
+            "yuzde": f"{r}$yuzde <- 100 * (frekans / n_sinif)  # p = 100 r",
+            "kumulatif_frekans": f"{r}$kumulatif_frekans <- cumsum(frekans)  # F = f1 + ... + fj",
+            "kumulatif_goreli": f"{r}$kumulatif_goreli <- cumsum(frekans) / n_sinif",
+            "kumulatif_yuzde": f"{r}$kumulatif_yuzde <- 100 * (cumsum(frekans) / n_sinif)",
+        }
+        lines += [line for column, line in steps.items() if column in op.columns]
+        if op.totals:
+            summed = [column for column in ("frekans", "goreli", "yuzde") if column in op.columns]
+            lines += [
+                f"toplamlar <- colSums({r}[, {_vector(summed)}, drop = FALSE])",
+                f'{r}["{TOTAL}", ] <- NA  # alt ve üst sınır toplanmaz',
+                f'{r}["{TOTAL}", names(toplamlar)] <- toplamlar',
+            ]
+        return lines + [f"print(round({r}, 3))"]
+
+    def _stem_leaf(self, op: StemLeaf) -> list[str]:
+        r = op.result
+        return [
+            "# R'nin stem() fonksiyonu gövde ölçeğini kendisi seçer; notlardaki gösterimle aynı olsun diye",
+            "# gövde (onlar basamağı) ve yaprak (birler basamağı) açıkça ayrılır.",
+            f"sirali <- sort({op.frame}${op.variable})",
+            "govde <- sirali %/% 10",
+            "yaprak <- sirali %% 10",
+            "govdeler <- seq(min(govde), max(govde))",
+            f"{r} <- data.frame(",
+            '  yapraklar = sapply(govdeler, function(g) paste(yaprak[govde == g], collapse = " ")),',
+            "  yaprak_sayisi = sapply(govdeler, function(g) sum(govde == g)),",
+            "  row.names = govdeler",
+            ")",
+            f'cat(paste(govdeler, "|", {r}$yapraklar), sep = "\\n")',
+        ]
+
+    def _percentile(self, op: Percentile) -> list[str]:
+        p = E.format_number(op.p)
+        source = f"{op.frame}${op.variable}"
+        if op.method == "ders":
+            lines = [f"# {op.comment}: ders kuralı L_p = (p/100)(n + 1)"]
+            location = f"{p} / 100 * (length({source}) + 1)"
+            value = f"yuzdelik({source}, {p})"
+        else:
+            lines = [f"# {op.comment}: R'nin varsayılanı (type = 7), konum 1 + (p/100)(n - 1)"]
+            location = f"1 + {p} / 100 * (length({source}) - 1)"
+            value = f"quantile({source}, {p} / 100, names = FALSE)"
+        if op.location is not None:
+            lines.append(f"{op.location} <- {location}")
+        lines.append(f"{op.name} <- {value}")
+        if op.location is not None:
+            lines.append(
+                f'cat(sprintf("{_sprintf(op.comment)}: %.{op.decimals}f (konum %.2f)\\n", {op.name}, {op.location}))'
+            )
+        else:
+            lines.append(f'cat(sprintf("{_sprintf(op.comment)}: %.{op.decimals}f\\n", {op.name}))')
+        return lines
+
+    def _class_histogram(self, op: ClassHistogram) -> list[str]:
+        rows, _ = self.totals.get(op.table, (False, False))
+        source = f'{op.table}[rownames({op.table}) != "{TOTAL}", ]' if rows else op.table
+        values = f"cizim${op.y}"
+        lines = [
+            f"cizim <- {source}",
+            "genislik <- cizim$ust - cizim$alt",
+            "# Bitişik dikdörtgenler (space = 0): genişlik sınıf genişliği, yükseklik sınıfın değeri",
+            f'konum <- barplot({values}, width = genislik, space = 0, col = "{PALETTE[0]}", border = "white",',
+            f"                 ylim = c(0, max({values}) * 1.15),",
+            f'                 xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}",',
+            f'                 main = "{_quote(op.title)}")',
+            "axis(1, at = c(0, cumsum(genislik)), labels = sinir_metni(c(cizim$alt, cizim$ust[nrow(cizim)])))",
+        ]
+        if op.labels:
+            percent = ", yuzde = TRUE" if op.percent else ""
+            lines.append(
+                f"text(konum, {values}, labels = sayi_metni({values}, {op.decimals}{percent}), pos = 3, xpd = TRUE)"
+            )
+        return lines
+
+    def _dot_plot(self, op: DotPlot) -> list[str]:
+        source = f"{op.frame}${op.variable}"
+        limits = ""
+        if op.x_range is not None:
+            low, high = (E.format_number(value) for value in op.x_range)
+            limits = f"xlim = c({low}, {high}), "  # karşılaştırılan grafiklerde aynı yatay eksen
+        lines = [
+            f"yigin <- ave({source}, {source}, FUN = seq_along)  # aynı değerdeki gözlemler üst üste",
+            f'plot({source}, yigin, pch = 19, col = "{PALETTE[0]}", yaxt = "n", ylim = c(0.5, max(yigin) + 0.5),',
+            f'     {limits}xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+            "axis(2, at = seq_len(max(yigin)), las = 1)",
+        ]
+        if op.references:
+            colors, ltys, labels = [], [], []
+            for index, (name, label) in enumerate(op.references):
+                color, lty = _REFERENCE_STYLES[index % len(_REFERENCE_STYLES)]
+                lines.append(f'abline(v = {name}, col = "{color}", lty = {lty}, lwd = 2)')
+                colors.append(f'"{color}"')
+                ltys.append(lty)
+                labels.append(text(label))
+            lines.append(
+                f'legend("topright", legend = c({", ".join(labels)}), col = c({", ".join(colors)}), '
+                f'lty = c({", ".join(ltys)}), lwd = 2, bty = "n")'
+            )
+        return lines
 
     def _chart_matrix(self, table: str) -> str:
         """Grafikte çizilecek sayılar: ``Toplam`` satırı ve sütunu çıkarılmış matris."""
