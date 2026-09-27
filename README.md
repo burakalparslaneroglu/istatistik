@@ -24,8 +24,8 @@ Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç 
 | 06 | Olasılığın Temelleri | Yeni yapı | 9 | 35 | 3 | 24 |
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı | 10 | 61 | 3 | 24 |
 | 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı | 12 | 65 | 3 | 24 |
-| 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Eski yapı | — | — | — | — |
-| 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Eski yapı | — | — | — | — |
+| 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı | 8 | 39 | 3 | 24 |
+| 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Yeni yapı | 7 | 30 | 3 | 24 |
 | 11 | Normal Olasılıklar ve Üstel Dağılım | Eski yapı | — | — | — | — |
 | 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Eski yapı | — | — | — | — |
 
@@ -43,8 +43,8 @@ sonucun hangi anlamda aynı olduğu yazılır:
 İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları ders notlarındaki basılı
 sayılarla karşılaştırır (`OK` / `HATA`). Gerekli paketler:
 
-- Python 3.12: `pandas`, `numpy`, `matplotlib`. Normal dağılım fonksiyonu kullanan Sezgi deneylerinin kodu
-  ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2).
+- Python 3.12: `pandas`, `numpy`, `matplotlib`. Olasılık dağılımı fonksiyonu (binom, Poisson, hipergeometrik,
+  normal, tek-düze) kullanan kod ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2, Konu 9 ve Konu 10).
 - R 4.2 veya üstü: yalnız temel R; ek paket gerekmez. Betik Rscript ile çalıştırılırsa grafikler
   çalışma klasörüne değil R'nin geçici klasörüne yazılır; RStudio'da Plots panelinde görünür.
 

@@ -19,6 +19,7 @@ from core.labs.spec import (
     BoxPlot,
     ClassHistogram,
     CompareBarChart,
+    DensityPlot,
     DotPlot,
     GroupedBarChart,
     HeatMap,
@@ -30,7 +31,7 @@ from core.labs.spec import (
     ScatterPlot,
     TreeDiagram,
 )
-from core.labs.tables import boundary_label
+from core.labs.tables import boundary_label, density
 
 CHART_TYPES = CHARTS
 
@@ -392,6 +393,50 @@ def _tree(op: TreeDiagram, data: pd.DataFrame) -> go.Figure:
     return style_figure(figure, title=op.title, x_title="", y_title="")
 
 
+def _rgba(color: str, alpha: float) -> str:
+    red, green, blue = (int(color[index:index + 2], 16) for index in (1, 3, 5))
+    return f"rgba({red}, {green}, {blue}, {alpha})"
+
+
+def _density(op: DensityPlot, data: pd.DataFrame) -> go.Figure:
+    """Yoğunluk eğrisi; boyalı aralıkların alanı olasılıktır (üretilen koddaki gibi her aralık ayrı ızgarayla)."""
+
+    figure = go.Figure()
+    for low, high in op.shade:
+        x = np.linspace(low, high, 200)
+        figure.add_trace(
+            go.Scatter(
+                x=np.r_[low, x, high], y=np.r_[0.0, density(op.distribution, op.first, op.second, x), 0.0],
+                fill="toself", mode="lines", line={"width": 0}, fillcolor=_rgba(PALETTE[0], 0.3),
+                name=f"{tr_number(low, 2).rstrip('0').rstrip(',')}–{tr_number(high, 2).rstrip('0').rstrip(',')}",
+                hoverinfo="skip", showlegend=False,
+            )
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=data["x"], y=data["f"], mode="lines", line={"color": PALETTE[0], "width": 2.5}, name="f(x)",
+            showlegend=False, hovertemplate="x = %{x:.2f}<br>f(x) = %{y:.4f}<extra></extra>",
+        )
+    )
+    for index, (value, label) in enumerate(op.references):  # dikey çizgiler; etiket olduğu gibi açıklamada
+        figure.add_trace(
+            go.Scatter(
+                x=[value, value], y=[0, 1], mode="lines", name=label, yaxis="y2", hoverinfo="skip",
+                line={"color": REFERENCE_COLORS[index % len(REFERENCE_COLORS)], "width": 2.5,
+                      "dash": ("dash", "dot", "dashdot")[index % 3]},
+            )
+        )
+    if op.references:
+        figure.update_layout(yaxis2={"overlaying": "y", "range": [0, 1], "visible": False},
+                             legend={"orientation": "h", "y": -0.25})
+    figure.update_xaxes(range=list(op.x_range))
+    if op.y_max is None:
+        figure.update_yaxes(rangemode="tozero")
+    else:
+        figure.update_yaxes(range=[0, op.y_max])
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
 def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Figure:
     """Bir grafik işleminin Plotly karşılığı; ``label`` seri başlıkları için Türkçe ad verir."""
 
@@ -427,4 +472,6 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
         return _heatmap(op, data)
     if isinstance(op, TreeDiagram):
         return _tree(op, data)
+    if isinstance(op, DensityPlot):
+        return _density(op, data)
     raise TypeError(f"Grafik türü tanınmıyor: {type(op).__name__}")

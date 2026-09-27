@@ -14,10 +14,12 @@ from core.labs.spec import (
     CrossTab,
     Derive,
     Draw,
+    DrawCount,
     DrawDiscrete,
     Event,
     FrequencyTable,
     FromCounts,
+    GroupSummary,
     InlineData,
     JoinColumns,
     LabSpec,
@@ -27,10 +29,13 @@ from core.labs.spec import (
     NewSample,
     Operation,
     Outcomes,
+    Rectangles,
+    RowSum,
     Scalar,
     ScalarTable,
     ScalarTarget,
     Selections,
+    Support,
 )
 
 LANGUAGES = ("Python", "R")
@@ -115,9 +120,18 @@ def numeric_columns(spec: LabSpec) -> set[tuple[str, str]]:
                         found.add((op.frame, column))
             elif isinstance(op, Outcomes):
                 found |= {(op.frame, column) for column, values in op.stages if _numbers(values)}
-            elif isinstance(op, (Derive, Event, Draw, DrawDiscrete, MapCodes)):
+            elif isinstance(op, (Derive, Event, Draw, DrawDiscrete, DrawCount, MapCodes, Support, Rectangles, RowSum)):
                 found.add((op.frame, op.name))
     return found
+
+
+def numeric_tables(spec: LabSpec) -> set[str]:
+    """Satır adları sayı olan grup özetleri (ör. başarı sayısı x = 0, 1, …): sütun grafiğinde kategori etiketi."""
+
+    return {
+        op.result for step in spec.steps for op in flatten(step.operations)
+        if isinstance(op, GroupSummary) and _numbers(op.order)
+    }
 
 
 def signed_columns(spec: LabSpec) -> set[tuple[str, str]]:
@@ -200,6 +214,7 @@ class Generator:
         self.has_checks = any(step.checks for step in spec.steps)
         self.totals = totals_of(spec)
         self.numeric_columns = numeric_columns(spec)
+        self.numeric_tables = numeric_tables(spec)
         self.signed_columns = signed_columns(spec)
         self.quiet = False
         """Monte Carlo döngüsü içinde ekrana yazdırma satırları üretilmez."""
@@ -286,7 +301,7 @@ class Generator:
     def depends_on_earlier(self, step: LabStep) -> bool:
         """Adım kendi verisini kurmuyorsa önceki adımların çıktısına dayanır."""
 
-        sources = (InlineData, FromCounts, NewSample, Outcomes, Selections)
+        sources = (InlineData, FromCounts, NewSample, Outcomes, Selections, Support, Rectangles)
         created = {op.frame for op in step.operations if isinstance(op, sources)}
         used: set[str] = set()
         for op in flatten(step.operations):

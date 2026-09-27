@@ -56,6 +56,10 @@ STATISTICS = (
 PAIR_STATISTICS = ("cov", "corr")
 """İki değişkenli istatistikler: örneklem kovaryansı s_xy (payda n − 1) ve Pearson korelasyonu r."""
 DISTRIBUTIONS = ("normal", "uniform", "beta", "gamma")
+COUNT_DISTRIBUTIONS = {"binomial": 2, "poisson": 1, "hypergeometric": 3}
+"""Sayım çekilişlerinin dağılımları ve parametre sayıları: binom (n, p), Poisson (λ), hipergeometrik (N, r, n)."""
+DENSITIES = ("normal", "uniform")
+"""Yoğunluk grafiğinin dağılımları: normal (μ, σ) ve tek-düze (a, b)."""
 BOX_ROWS = (
     "en_kucuk", "q1", "medyan", "q3", "en_buyuk", "iqr", "alt_sinir", "ust_sinir", "alt_biyik", "ust_biyik",
     "aykiri_sayisi",
@@ -193,6 +197,54 @@ class Groups:
 
 
 @dataclass(frozen=True)
+class Support:
+    """Kesikli bir rassal değişkenin olası değerleri: ``lower``, ``lower`` + 1, …, ``upper`` (tam sayılar).
+
+    Her satır bir olası değerdir; olasılıklar ardından ``Derive`` ile (ör. ``E.dbinom``) eklenir.
+    """
+
+    frame: str
+    name: str
+    lower: int
+    upper: int
+    comment: str
+
+
+@dataclass(frozen=True)
+class RowSum:
+    """Satır toplamı: ``columns`` sütunlarının her satırdaki toplamı (ör. bir dizideki Bernoulli başarılarının
+    sayısı X = Y₁ + ⋯ + Yₙ)."""
+
+    frame: str
+    name: str
+    columns: tuple[str, ...]
+    comment: str
+
+
+@dataclass(frozen=True)
+class Rectangles:
+    """Eğri altındaki alanı dikdörtgenlerle hesaplamak için [``lower``, ``upper``] aralığının bölünmesi.
+
+    Aralık genişliği ``width`` olan k = (upper − lower)/width dikdörtgene ayrılır; ``name`` sütunu dikdörtgenlerin
+    orta noktalarıdır: lower + width·(i − 0,5), i = 1, …, k. Dikdörtgenin alanı yükseklik (yoğunluk) × genişliktir.
+    """
+
+    frame: str
+    name: str
+    lower: float
+    upper: float
+    width: float
+    comment: str
+
+    @property
+    def count(self) -> int:
+        k = round((self.upper - self.lower) / self.width)
+        if k < 1 or abs(k * self.width - (self.upper - self.lower)) > 1e-9:
+            raise ValueError("Aralık genişliği dikdörtgen genişliğinin tam katı olmalıdır.")
+        return k
+
+
+@dataclass(frozen=True)
 class Derive:
     """İfadeden yeni bir sayısal değişken türetir."""
 
@@ -228,6 +280,19 @@ class Draw:
     distribution: str
     first: float
     second: float
+    comment: str
+
+
+@dataclass(frozen=True)
+class DrawCount:
+    """Sayım rassal değişkeni (``COUNT_DISTRIBUTIONS``): binom (n, p) — n bağımsız Bernoulli denemesindeki başarı
+    sayısı; Poisson (λ) — bir aralıktaki olay sayısı; hipergeometrik (N, r, n) — r başarı içeren N birimden yerine
+    koymadan seçilen n birimdeki başarı sayısı."""
+
+    frame: str
+    name: str
+    distribution: str
+    parameters: tuple[float, ...]
     comment: str
 
 
@@ -339,13 +404,16 @@ class ScalarTable:
 
 @dataclass(frozen=True)
 class GroupSummary:
-    """Bir kategorik değişkenin gruplarına göre özet: (sütun adı, değişken, istatistik)."""
+    """Bir değişkenin gruplarına göre özet: (sütun adı, değişken, istatistik). Gruplar ``order`` sırasıyla; grup
+    değerleri sayı da olabilir (ör. başarı sayısı x = 0, 1, …). ``decimals``: ekranda gösterim basamağı (``count``
+    sütunları tam sayı)."""
 
     frame: str
     by: str
     columns: tuple[tuple[str, str, str], ...]
     result: str
     order: tuple[object, ...]
+    decimals: int = 3
 
 
 @dataclass(frozen=True)
@@ -694,6 +762,28 @@ class HeatMap:
 
 
 @dataclass(frozen=True)
+class DensityPlot:
+    """Sürekli bir dağılımın yoğunluk eğrisi f(x) (``DENSITIES``); ``shade`` aralıklarının altı boyanır: olasılık,
+    eğri altındaki alandır.
+
+    ``first`` ve ``second``: normalde μ ve σ, tek-düzede a ve b. ``x_range`` yatay eksenin sınırlarıdır (kaydırıcılar
+    değişince aynı eksen). ``references``: (değer, etiket) dikey çizgileri. ``y_max`` verilirse dikey eksen 0 ile
+    ``y_max`` arasında sabittir: σ büyüyünce eğrinin basıklaştığı görülür.
+    """
+
+    distribution: str
+    first: float
+    second: float
+    x_range: tuple[float, float]
+    title: str
+    x_label: str
+    y_label: str = "f(x)"
+    shade: tuple[tuple[float, float], ...] = ()
+    references: tuple[tuple[float, str], ...] = ()
+    y_max: float | None = None
+
+
+@dataclass(frozen=True)
 class MonteCarlo:
     """``body`` işlemlerini ``reps`` kez tekrarlar; her tekrarda ``collect`` ifadelerini toplar.
 
@@ -719,9 +809,13 @@ Operation = Union[
     ShowFrame,
     MapCodes,
     Groups,
+    Support,
+    Rectangles,
+    RowSum,
     Derive,
     NewSample,
     Draw,
+    DrawCount,
     DrawCategory,
     DrawDiscrete,
     Shape,
@@ -751,12 +845,13 @@ Operation = Union[
     MosaicChart,
     TreeDiagram,
     HeatMap,
+    DensityPlot,
     MonteCarlo,
 ]
 
 CHARTS = (
     BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
-    DotPlot, MosaicChart, TreeDiagram, HeatMap,
+    DotPlot, MosaicChart, TreeDiagram, HeatMap, DensityPlot,
 )
 AXISLESS_CHARTS = (PieChart, TreeDiagram)
 """Ekseni olmayan grafikler: eksen adı gerekmez (pasta dilimleri, olasılık ağacı)."""

@@ -29,10 +29,12 @@ from core.labs.spec import (
     CompareBarChart,
     Count,
     CrossTab,
+    DensityPlot,
     Derive,
     DotPlot,
     Draw,
     DrawCategory,
+    DrawCount,
     DrawDiscrete,
     Event,
     FrequencyTable,
@@ -54,6 +56,8 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    Rectangles,
+    RowSum,
     Scalar,
     ScalarTable,
     ScalarTarget,
@@ -64,6 +68,7 @@ from core.labs.spec import (
     Statistic,
     StatTarget,
     StemLeaf,
+    Support,
     TableTarget,
     TreeDiagram,
     VariableTypes,
@@ -78,9 +83,29 @@ _FUNCTIONS = {
     "round": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm", "norminv": "qnorm",
     "cumprod": "cumprod", "cummean": "cumsum({0}) / seq_along({0})", "seq": "seq_along({0})",
     "factorial": "factorial({0})", "comb": "choose({0}, {1})", "perm": "factorial({0}) / factorial({0} - {1})",
+    "dbinom": "dbinom", "pbinom": "pbinom", "dpois": "dpois", "ppois": "ppois", "dnorm": "dnorm",
+    "dhyper_r": "dhyper", "phyper_r": "phyper",
     **{name: f"as.numeric({{0}} {symbol} {{1}})" for name, symbol in E.COMPARISONS.items()},
 }
 _REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3", "4")))
+
+
+def _rewrite(expression: E.Expr) -> E.Expr:
+    """R'nin hipergeometrik fonksiyonları (x, başarı, başarısızlık, seçim) sırasını ister: dhyper(x, r, N − r, n)."""
+
+    if isinstance(expression, E.BinOp):
+        return E.BinOp(expression.op, _rewrite(expression.left), _rewrite(expression.right))
+    if isinstance(expression, E.Call):
+        arguments = tuple(_rewrite(argument) for argument in expression.args)
+        if expression.fn in ("dhyper", "phyper"):
+            x, population, successes, draws = arguments
+            return E.Call(f"{expression.fn}_r", (x, successes, E.sub(population, successes), draws))
+        return E.Call(expression.fn, arguments)
+    return expression
+
+
+def _r(expression: E.Expr, dialect: E.Dialect) -> str:
+    return E.render(_rewrite(expression), dialect)
 
 _NUMBER_TEXT = [
     "# Grafik etiketleri için Türkçe sayı: ondalık virgül, yüzde işareti sayıdan önce",
@@ -282,7 +307,19 @@ class RGenerator(Generator):
                 f"{op.frame}${op.name} <- rep({_vector(op.labels)}, times = {_vector(op.sizes)})",
             ]
         if isinstance(op, Derive):
-            return [f"# {op.comment}", f"{op.frame}${op.name} <- {E.render(op.expr, self.dialect(op.frame))}"]
+            return [f"# {op.comment}", f"{op.frame}${op.name} <- {_r(op.expr, self.dialect(op.frame))}"]
+        if isinstance(op, Support):
+            lower, upper = E.format_number(op.lower), E.format_number(op.upper)
+            return [f"# {op.comment}", f"{op.frame} <- data.frame({op.name} = {lower}:{upper})"]
+        if isinstance(op, RowSum):
+            return [f"# {op.comment}", f"{op.frame}${op.name} <- rowSums({op.frame}[, {_vector(op.columns)}])"]
+        if isinstance(op, Rectangles):
+            lower, width = E.format_number(op.lower), E.format_number(op.width)
+            return [
+                f"# {op.comment}",
+                f"# {op.count} dikdörtgen; {op.name}: dikdörtgenlerin orta noktaları, alt sınır + genişlik × (i - 0,5)",
+                f"{op.frame} <- data.frame({op.name} = {lower} + {width} * (seq_len({op.count}) - 0.5))",
+            ]
         if isinstance(op, NewSample):
             frame = f"{op.frame} <- data.frame(id = seq_len({op.nobs}))"
             if op.seed is None:
@@ -301,6 +338,8 @@ class RGenerator(Generator):
                 "gamma": f"rgamma(nrow({op.frame}), shape = {a}, scale = {b})",
             }[op.distribution]
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {call}"]
+        if isinstance(op, DrawCount):
+            return self._draw_count(op)
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
         if isinstance(op, DrawDiscrete):
@@ -343,7 +382,7 @@ class RGenerator(Generator):
                 f'cat(sprintf("{_sprintf(op.comment)}: %.{op.decimals}f\\n", {op.name}))',
             ]
         if isinstance(op, Scalar):
-            rhs = E.render(op.expr, self.dialect(""))
+            rhs = _r(op.expr, self.dialect(""))
             shown = f"%%%.{op.decimals}f" if op.percent else f"%.{op.decimals}f"
             return [
                 f"# {op.comment}",
@@ -352,7 +391,7 @@ class RGenerator(Generator):
             ]
         if isinstance(op, ScalarTable):
             dialect = self.dialect("")
-            rows = [f"  {text(label)} = {E.render(expression, dialect)}" for label, expression in op.rows]
+            rows = [f"  {text(label)} = {_r(expression, dialect)}" for label, expression in op.rows]
             rows = [row + ("," if index < len(rows) - 1 else "") for index, row in enumerate(rows)]
             return [f"{op.result} <- data.frame(deger = c(", *rows, "))", f"print(round({op.result}, {op.decimals}))"]
         if isinstance(op, GroupSummary):
@@ -417,6 +456,8 @@ class RGenerator(Generator):
             return self._tree(op)
         if isinstance(op, HeatMap):
             return self._heatmap(op)
+        if isinstance(op, DensityPlot):
+            return self._density(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"R üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -514,6 +555,23 @@ class RGenerator(Generator):
             lines += wrapped(f"  {field} = c(", values, f"){ending}")
         return lines + [")", f"print({op.result})"]
 
+    @staticmethod
+    def _draw_count(op: DrawCount) -> list[str]:
+        values = [E.format_number(value) for value in op.parameters]
+        rows = f"nrow({op.frame})"
+        if op.distribution == "binomial":
+            return [f"# {op.comment} (n bağımsız Bernoulli denemesindeki başarı sayısı)",
+                    f"{op.frame}${op.name} <- rbinom({rows}, size = {values[0]}, prob = {values[1]})"]
+        if op.distribution == "poisson":
+            return [f"# {op.comment} (aralıktaki olay sayısı)",
+                    f"{op.frame}${op.name} <- rpois({rows}, lambda = {values[0]})"]
+        population, successes, draws = (int(value) for value in op.parameters)
+        return [
+            f"# {op.comment} (N birimden yerine koymadan seçilen n birimdeki başarı sayısı)",
+            "# R'nin adları: m başarı sayısı, n başarısızlık sayısı, k seçim sayısı",
+            f"{op.frame}${op.name} <- rhyper({rows}, m = {successes}, n = {population - successes}, k = {draws})",
+        ]
+
     def _draw_category(self, op: DrawCategory) -> list[str]:
         categories = f"{op.name}_kategoriler"
         lines = [
@@ -567,7 +625,8 @@ class RGenerator(Generator):
         ]
 
     def _group_summary(self, op: GroupSummary) -> list[str]:
-        order = _vector(op.order)
+        # tapply sonucunun adları metindir; sayısal grup değerleri (0, 1, …) konumla değil adla seçilsin
+        order = _vector(tuple(value if isinstance(value, str) else E.format_number(float(value)) for value in op.order))
         lines = [f"{op.result} <- data.frame("]
         for index, (name, variable, stat) in enumerate(op.columns):
             ending = "," if index < len(op.columns) - 1 else ""
@@ -1075,6 +1134,46 @@ class RGenerator(Generator):
             "par(eski_par)",
         ]
 
+    @staticmethod
+    def _density_call(op: DensityPlot, x: str) -> str:
+        a, b = E.format_number(op.first), E.format_number(op.second)
+        return f"dnorm({x}, {a}, {b})" if op.distribution == "normal" else f"dunif({x}, {a}, {b})"
+
+    def _density(self, op: DensityPlot) -> list[str]:
+        low, high = (E.format_number(value) for value in op.x_range)
+        kind = "N(μ, σ²): ortalama, standart sapma" if op.distribution == "normal" else "U(a, b): alt ve üst sınır"
+        curve = self._density_call(op, "eksen")
+        top = f"1.08 * max({curve})" if op.y_max is None else E.format_number(op.y_max)
+        lines = [
+            f"# Yoğunluk eğrisi, {kind}",
+            f"eksen <- seq({low}, {high}, length.out = 401)",
+            f'plot(eksen, {curve}, type = "l", lwd = 2, col = "{PALETTE[0]}", xaxs = "i",',
+            f"     ylim = c(0, {top}),",
+            f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+        ]
+        if op.shade:
+            pairs = ", ".join(f"c({E.format_number(a)}, {E.format_number(b)})" for a, b in op.shade)
+            lines += [
+                f"for (aralik in list({pairs})) {{  # olasılık = eğri altındaki alan",
+                "  xa <- seq(aralik[1], aralik[2], length.out = 200)",
+                f"  polygon(c(aralik[1], xa, aralik[2]), c(0, {self._density_call(op, 'xa')}, 0),",
+                f'          col = adjustcolor("{PALETTE[0]}", 0.3), border = NA)',
+                "}",
+            ]
+        if op.references:
+            colors, ltys, labels = [], [], []
+            for index, (value, label) in enumerate(op.references):
+                color, lty = _REFERENCE_STYLES[index % len(_REFERENCE_STYLES)]
+                lines.append(f'abline(v = {E.format_number(value)}, col = "{color}", lty = {lty}, lwd = 2)')
+                colors.append(f'"{color}"')
+                ltys.append(lty)
+                labels.append(text(label))
+            lines += [
+                f'legend("topright", legend = c({", ".join(labels)}),',
+                f'       col = c({", ".join(colors)}), lty = c({", ".join(ltys)}), lwd = 2, bty = "n")',
+            ]
+        return lines
+
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [
             f"# {op.comment}",
@@ -1093,7 +1192,7 @@ class RGenerator(Generator):
         lines.append("  sonuclar[[tekrar]] <- c(")
         for index, (name, expression) in enumerate(op.collect):
             ending = "," if index < len(op.collect) - 1 else ""
-            lines.append(f"    {name} = {E.render(expression, dialect)}{ending}")
+            lines.append(f"    {name} = {_r(expression, dialect)}{ending}")
         return lines + [
             "  )",
             "}",

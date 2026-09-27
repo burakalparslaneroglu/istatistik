@@ -31,10 +31,12 @@ from core.labs.spec import (
     CompareBarChart,
     Count,
     CrossTab,
+    DensityPlot,
     Derive,
     DotPlot,
     Draw,
     DrawCategory,
+    DrawCount,
     DrawDiscrete,
     Event,
     FrequencyTable,
@@ -56,6 +58,8 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    Rectangles,
+    RowSum,
     Scalar,
     ScalarTable,
     ScalarTarget,
@@ -66,6 +70,7 @@ from core.labs.spec import (
     Statistic,
     StatTarget,
     StemLeaf,
+    Support,
     TableTarget,
     TreeDiagram,
     VariableTypes,
@@ -79,7 +84,7 @@ _STAT = {
 }
 """İstatistiğin pandas karşılığı; ``mode().item()`` birden fazla mod varsa hata verir (tek mod beklenir).
 ``var()`` ve ``std()`` pandas'ta örneklem ölçüleridir (payda n − 1)."""
-_SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv"}
+_SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv", *E.DISTRIBUTION_FUNCTIONS}
 _MATH_FUNCTIONS = set(E.COUNTING_FUNCTIONS)
 _FUNCTIONS = {
     "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
@@ -88,6 +93,9 @@ _FUNCTIONS = {
     "factorial": "math.factorial(int({0}))", "comb": "math.comb(int({0}), int({1}))",
     "perm": "math.perm(int({0}), int({1}))",
     "normcdf": "stats.norm.cdf", "normpdf": "stats.norm.pdf", "norminv": "stats.norm.ppf",
+    "dbinom": "stats.binom.pmf", "pbinom": "stats.binom.cdf", "dpois": "stats.poisson.pmf",
+    "ppois": "stats.poisson.cdf", "dhyper": "stats.hypergeom.pmf", "phyper": "stats.hypergeom.cdf",
+    "dnorm": "stats.norm.pdf",
     **{name: f"np.where({{0}} {symbol} {{1}}, 1.0, 0.0)" for name, symbol in E.COMPARISONS.items()},
 }
 
@@ -162,8 +170,8 @@ def _needs_numpy(operations) -> bool:
     """numpy yalnız rastgele çekiliş, grup etiketi, histogram, yüzdelik, veriden sınıf sınırı veya ifade
     fonksiyonu varsa gerekir."""
 
-    numpy_ops = (Groups, NewSample, Draw, DrawCategory, DrawDiscrete, Histogram, MonteCarlo, Percentile, BoxSummary,
-                 BoxPlot, TreeDiagram)
+    numpy_ops = (Groups, NewSample, Draw, DrawCategory, DrawDiscrete, DrawCount, Histogram, MonteCarlo, Percentile,
+                 BoxSummary, BoxPlot, TreeDiagram, Support, Rectangles, DensityPlot)
     for op in flatten(operations):
         if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
             return True
@@ -227,7 +235,7 @@ class PythonGenerator(Generator):
         if _needs_numpy(operations):
             lines.append("import numpy as np")
         lines.append("import pandas as pd")
-        if functions_used(operations) & _SCIPY_FUNCTIONS:
+        if functions_used(operations) & _SCIPY_FUNCTIONS or any(isinstance(op, DensityPlot) for op in flat):
             lines.append("from scipy import stats")
         lines.append("")
         return lines
@@ -315,6 +323,18 @@ class PythonGenerator(Generator):
                 f"# {op.comment}",
                 f'{op.frame}["{op.name}"] = np.repeat({_list(op.labels)}, {_list(op.sizes)})',
             ]
+        if isinstance(op, Support):
+            lower, upper = E.format_number(op.lower), E.format_number(op.upper)
+            return [f"# {op.comment}", f'{op.frame} = pd.DataFrame({{"{op.name}": np.arange({lower}, {upper} + 1)}})']
+        if isinstance(op, RowSum):
+            return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {op.frame}[{_list(op.columns)}].sum(axis=1)']
+        if isinstance(op, Rectangles):
+            lower, width = E.format_number(op.lower), E.format_number(op.width)
+            return [
+                f"# {op.comment}",
+                f"# {op.count} dikdörtgen; {op.name}: dikdörtgenlerin orta noktaları, alt sınır + genişlik × (i − 0,5)",
+                f'{op.frame} = pd.DataFrame({{"{op.name}": {lower} + {width} * (np.arange(1, {op.count} + 1) - 0.5)}})',
+            ]
         if isinstance(op, Derive):
             rhs = _render(op.expr, self.dialect(op.frame))
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {rhs}']
@@ -332,6 +352,8 @@ class PythonGenerator(Generator):
             method = {"normal": "normal", "uniform": "uniform", "beta": "beta", "gamma": "gamma"}[op.distribution]
             call = f"rng.{method}({a}, {b}, size=len({op.frame}))"
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
+        if isinstance(op, DrawCount):
+            return self._draw_count(op)
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
         if isinstance(op, DrawDiscrete):
@@ -449,6 +471,8 @@ class PythonGenerator(Generator):
             return self._tree(op)
         if isinstance(op, HeatMap):
             return self._heatmap(op)
+        if isinstance(op, DensityPlot):
+            return self._density(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"Python üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -540,6 +564,22 @@ class PythonGenerator(Generator):
             f"print({op.frame}.head(10))",
             f'print("Seçim sayısı:", len({op.frame}))',
         ]
+
+    @staticmethod
+    def _draw_count(op: DrawCount) -> list[str]:
+        values = [E.format_number(value) for value in op.parameters]
+        size = f"size=len({op.frame})"
+        if op.distribution == "binomial":
+            call = f"rng.binomial(n={values[0]}, p={values[1]}, {size})"
+            note = "n bağımsız Bernoulli denemesindeki başarı sayısı"
+        elif op.distribution == "poisson":
+            call = f"rng.poisson(lam={values[0]}, {size})"
+            note = "aralıktaki olay sayısı"
+        else:
+            population, successes, draws = (int(value) for value in op.parameters)
+            call = f"rng.hypergeometric(ngood={successes}, nbad={population - successes}, nsample={draws}, {size})"
+            note = "N birimden yerine koymadan seçilen n birimdeki başarı sayısı"
+        return [f"# {op.comment} ({note})", f'{op.frame}["{op.name}"] = {call}']
 
     def _draw_category(self, op: DrawCategory) -> list[str]:
         categories = f"{op.name}_kategoriler"
@@ -805,6 +845,8 @@ class PythonGenerator(Generator):
     def _bar(self, op: BarChart) -> list[str]:
         if op.x is None:
             lines = [f'cizim = {self._chart_table(op.source)}["{op.y}"]']
+            if op.source in self.numeric_tables:
+                lines.append("cizim.index = cizim.index.astype(str)  # sayısal değerler kategori etiketi olarak")
         elif (op.source, op.x) in self.numeric_columns:
             lines = [
                 "# Sayısal değerler kategori etiketi olarak: her değer bir sütun, eksende yalnız bu değerler yazılır",
@@ -989,6 +1031,42 @@ class PythonGenerator(Generator):
             'ax.xaxis.set_label_position("top")',
             *self._axes(op.x_label, op.y_label, op.title),
         ]
+
+    @staticmethod
+    def _density_call(op: DensityPlot, x: str) -> str:
+        a, b = E.format_number(op.first), E.format_number(op.second)
+        if op.distribution == "normal":
+            return f"stats.norm.pdf({x}, {a}, {b})"
+        return f"stats.uniform.pdf({x}, {a}, {E.format_number(op.second - op.first)})"
+
+    def _density(self, op: DensityPlot) -> list[str]:
+        low, high = (E.format_number(value) for value in op.x_range)
+        if op.distribution == "normal":
+            note = f"N(μ, σ²) yoğunluğu: μ = {E.format_number(op.first)}, σ = {E.format_number(op.second)}"
+        else:
+            note = (f"U(a, b) yoğunluğu: a = {E.format_number(op.first)}, b = {E.format_number(op.second)}; "
+                    "scipy'de konum a, ölçek b − a")
+        lines = [
+            f"# {note}",
+            f"eksen = np.linspace({low}, {high}, 401)",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            f'ax.plot(eksen, {self._density_call(op, "eksen")}, color="{PALETTE[0]}", linewidth=2)',
+        ]
+        if op.shade:
+            pairs = ", ".join(f"({E.format_number(a)}, {E.format_number(b)})" for a, b in op.shade)
+            lines += [
+                f"for alt, ust in [{pairs}]:  # olasılık = eğri altındaki alan",
+                "    xa = np.linspace(alt, ust, 200)",
+                f'    ax.fill_between(xa, {self._density_call(op, "xa")}, color="{PALETTE[0]}", alpha=0.3)',
+            ]
+        for index, (value, label) in enumerate(op.references):
+            color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
+            style = ("--", ":", "-.")[index % 3]
+            lines.append(f'ax.axvline({E.format_number(value)}, color="{color}", linestyle="{style}", linewidth=2, '
+                         f"label={text(label)})")
+        limit = "bottom=0" if op.y_max is None else f"0, {E.format_number(op.y_max)}"
+        lines += [f"ax.set_xlim({low}, {high})", f"ax.set_ylim({limit})"]
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
 
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [

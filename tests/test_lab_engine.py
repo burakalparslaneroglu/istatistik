@@ -249,3 +249,115 @@ def test_new_charts_use_state_values_and_course_quartiles() -> None:
     summary = T.box_summary(state.frames["d"]["y"])
     assert (box.data[0].q1[0], box.data[0].median[0], box.data[0].q3[0]) == (summary["q1"], summary["medyan"],
                                                                                 summary["q3"])
+
+
+# --- Konu 9–10 ile eklenen işlemler ---------------------------------------------------
+
+def test_distribution_functions_agree_with_the_formulas() -> None:
+    from math import comb, exp, factorial, pi, sqrt
+
+    assert E.evaluate(E.dbinom(2, 8, 0.25)) == pytest.approx(comb(8, 2) * 0.25 ** 2 * 0.75 ** 6)
+    assert E.evaluate(E.pbinom(0, 8, 0.25)) == pytest.approx(0.75 ** 8)
+    assert E.evaluate(E.dpois(2, 3)) == pytest.approx(exp(-3) * 3 ** 2 / factorial(2))
+    assert E.evaluate(E.ppois(1, 3)) == pytest.approx(4 * exp(-3))
+    assert E.evaluate(E.dhyper(1, 20, 5, 4)) == pytest.approx(comb(5, 1) * comb(15, 3) / comb(20, 4))
+    assert E.evaluate(E.phyper(0, 20, 5, 4)) == pytest.approx(comb(15, 4) / comb(20, 4))
+    assert E.evaluate(E.dnorm(70, 70, 10)) == pytest.approx(1 / (10 * sqrt(2 * pi)))
+    with pytest.raises(ValueError):
+        E.validate(E.Call("dbinom", (E.const(1), E.const(2))))
+
+
+def test_unary_minus_is_parenthesised_only_inside_operations() -> None:
+    dialect = E.Dialect(variable=lambda name: name, functions={"exp": "exp"}, power="^")
+    assert E.render(E.exp(E.neg(E.ref("lam"))), dialect) == "exp(-lam)"
+    assert E.render(E.add(70, E.mul(E.neg(2), 10)), dialect) == "70 + (-2) * 10"
+    assert E.render(E.neg(E.sub(E.ref("a"), E.ref("b"))), dialect) == "-(a - b)"
+    assert E.render(E.power(E.neg(E.ref("a")), 2), dialect) == "(-a) ^ 2"
+    assert E.render(E.sub(E.ref("b"), -2), dialect) == "b - -2"  # sabit eksi değerlerin yazımı değişmedi
+    assert E.evaluate(E.add(70, E.mul(E.neg(2), 10))) == 50
+
+
+def test_distribution_functions_in_both_languages() -> None:
+    step = _one_step(E.add(E.dhyper(1, 20, 5, 4), E.dbinom(2, 8, 0.25)))
+    python, r = render_step(step, 1, "Python"), render_step(step, 1, "R")
+    assert "stats.hypergeom.pmf(1, 20, 5, 4) + stats.binom.pmf(2, 8, 0.25)" in python
+    assert "from scipy import stats" in python
+    assert "dhyper(1, 5, 20 - 5, 4) + dbinom(2, 8, 0.25)" in r  # R: dhyper(x, r, N − r, n)
+
+
+def test_support_row_sum_and_rectangles() -> None:
+    from core.labs.spec import Derive, Outcomes, Rectangles, RowSum, Support
+
+    state = run_operations((
+        Support("s", "x", 0, 3, "olası değerler"),
+        Outcomes("d", (("y1", (0, 1)), ("y2", (0, 1)), ("y3", (0, 1))), "diziler"),
+        RowSum("d", "x", ("y1", "y2", "y3"), "başarı sayısı"),
+        Rectangles("r", "m", 10, 11, 0.25, "dikdörtgenler"),
+        Rectangles("q", "m", 10, 11, 0.01, "ince dikdörtgenler"),
+        Derive("q", "alan", E.mul(E.dnorm(E.var("m"), 10.5, 1), 0.01), "yükseklik × genişlik"),
+    ))
+    assert list(state.frames["s"]["x"]) == [0, 1, 2, 3]
+    assert state.frames["d"]["x"].value_counts().sort_index().tolist() == [1, 3, 3, 1]
+    assert list(state.frames["r"]["m"]) == pytest.approx([10.125, 10.375, 10.625, 10.875])
+    assert state.frames["q"]["alan"].sum() == pytest.approx(0.382925, abs=2e-5)  # P(|Z| < 0,5)
+    with pytest.raises(ValueError, match="tam katı"):
+        Rectangles("r", "m", 0, 1, 0.3, "hatalı").count
+    with pytest.raises(ValueError):
+        T.support(2, 1)
+
+
+def test_count_draws_follow_their_distributions_and_the_generated_call() -> None:
+    from core.labs.spec import DrawCount
+
+    rng = np.random.default_rng(217)
+    binomial = T.draw_count(rng, "binomial", (10, 0.2), 20000)
+    poisson = T.draw_count(rng, "poisson", (3,), 20000)
+    hyper = T.draw_count(rng, "hypergeometric", (40, 4, 8), 20000)
+    assert binomial.mean() == pytest.approx(2.0, abs=0.05) and binomial.var() == pytest.approx(1.6, abs=0.06)
+    assert poisson.mean() == pytest.approx(3.0, abs=0.05) and poisson.var() == pytest.approx(3.0, abs=0.1)
+    assert hyper.mean() == pytest.approx(0.8, abs=0.03) and hyper.max() <= 4
+    with pytest.raises(ValueError, match="parametre"):
+        T.draw_count(rng, "poisson", (3, 1), 5)
+    # Uygulamadaki çekiliş, üretilen Python koduyla aynı çağrıdır: aynı tohum, aynı sayılar
+    state = run_operations((NewSample("f", 5, 217), DrawCount("f", "x", "hypergeometric", (40, 4, 8), "çekiliş")))
+    expected = np.random.default_rng(217).hypergeometric(ngood=4, nbad=36, nsample=8, size=5)
+    assert list(state.frames["f"]["x"]) == list(expected.astype(float))
+
+
+def test_density_plot_grid_codegen_and_figure() -> None:
+    from core.charts import figure_for
+    from core.codegen.base import render_script
+    from core.labs.spec import DensityPlot, LabSpec, LabStep, NoteRef
+
+    uniform = DensityPlot("uniform", 120, 140, (115, 145), "U(120, 140)", "Süre (dakika)", shade=((128, 136),))
+    normal = DensityPlot("normal", 70, 10, (30, 110), "N(70, 10²)", "Puan", references=((85, "x = 85"),))
+    state = run_operations((uniform, normal))
+    grid = T.density_grid("uniform", 120, 140, (115, 145))
+    assert grid["f"].max() == pytest.approx(0.05) and grid["f"].iloc[0] == 0
+    figure = figure_for(uniform, state)
+    assert any(trace.fill == "toself" for trace in figure.data)
+    step = LabStep(1, "t", NoteRef("10.2"), "t", operations=(uniform, normal))
+    spec = LabSpec("konu10", "t", "10", (step,))
+    python, r = render_script(spec, "Python"), render_script(spec, "R")
+    assert "stats.uniform.pdf(eksen, 120, 20)" in python and "stats.norm.pdf(eksen, 70, 10)" in python
+    assert "dunif(" in r and "dnorm(" in r and "polygon(" in r and "abline(v = 85" in r
+    with pytest.raises(ValueError):
+        T.density("uniform", 2, 1, 0.5)
+
+
+def test_numeric_group_summary_keeps_the_numeric_order_in_r() -> None:
+    from core.labs.spec import GroupSummary
+
+    state = run_operations((
+        InlineData("d", ("x", "p"), ((1.0, 0.2), (0.0, 0.3), (1.0, 0.1), (2.0, 0.4)), "veri"),
+        GroupSummary("d", "x", (("sayi", "p", "count"), ("toplam", "p", "sum")), "g", (0, 1, 2), decimals=4),
+    ))
+    table = state.tables["g"]
+    assert list(table.index) == [0, 1, 2] and list(table["toplam"]) == pytest.approx([0.3, 0.3, 0.4])
+    from core.labs.spec import LabSpec, LabStep, NoteRef
+
+    step = LabStep(1, "t", NoteRef("9.3"), "t", operations=(
+        InlineData("d", ("x", "p"), ((1.0, 0.2), (0.0, 0.3)), "veri"),
+        GroupSummary("d", "x", (("toplam", "p", "sum"),), "g", (0, 1)),
+    ))
+    assert 'tapply(d$p, d$x, sum)[c("0", "1")]' in render_step(LabSpec("konu09", "t", "9", (step,)), 1, "R")

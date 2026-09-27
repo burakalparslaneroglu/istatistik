@@ -53,11 +53,19 @@ Expr = Union[Var, Const, BinOp, Call, Ref]
 BINARY_OPS = ("+", "-", "*", "/", "^")
 COMPARISONS = {"le": "<=", "lt": "<", "ge": ">=", "gt": ">", "eq": "==", "ne": "!="}
 """Karşılaştırma fonksiyonları: koşul sağlanırsa 1, değilse 0 (gösterge değişkeni)."""
+DISTRIBUTION_FUNCTIONS = ("dbinom", "pbinom", "dpois", "ppois", "dhyper", "phyper", "dnorm")
+"""Olasılık fonksiyonları ve birikimli olasılıklar (vektör üzerinde de çalışır): Python'da ``scipy.stats``, R'de
+``dbinom``/``pbinom``, ``dpois``/``ppois``, ``dhyper``/``phyper`` ve ``dnorm``."""
 FUNCTIONS = (
-    "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", "norminv",
-    "cumprod", "cummean", "seq", "factorial", "comb", "perm", *COMPARISONS,
+    "neg", "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", "norminv",
+    "cumprod", "cummean", "seq", "factorial", "comb", "perm", *DISTRIBUTION_FUNCTIONS, *COMPARISONS,
 )
-_BINARY_FUNCTIONS = ("maximum", "minimum", "comb", "perm", *COMPARISONS)
+ARITY = {
+    **{name: 2 for name in ("maximum", "minimum", "comb", "perm", "dpois", "ppois", *COMPARISONS)},
+    **{name: 3 for name in ("dbinom", "pbinom", "dnorm")},
+    "dhyper": 4, "phyper": 4,
+}
+"""Birden fazla argüman alan fonksiyonların argüman sayısı; diğerleri tek argüman alır."""
 COUNTING_FUNCTIONS = ("factorial", "comb", "perm")
 """Sayma fonksiyonları tam sayı ister; Python'da ``math`` modülüyle, R'de ``factorial``/``choose`` ile yazılır."""
 _PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}
@@ -98,6 +106,12 @@ def div(a, b) -> BinOp:
 
 def power(a, b) -> BinOp:
     return BinOp("^", _wrap(a), _wrap(b))
+
+
+def neg(a) -> Call:
+    """Tek terimli eksi: −a (ör. e^(−λ) için ``exp(neg(ref("lam")))``)."""
+
+    return Call("neg", (_wrap(a),))
 
 
 def log(a) -> Call:
@@ -188,6 +202,48 @@ def perm(a, b) -> Call:
     return Call("perm", (_wrap(a), _wrap(b)))
 
 
+def dbinom(x, n, p) -> Call:
+    """Binom olasılık fonksiyonu P(X = x), X ~ Bin(n, p)."""
+
+    return Call("dbinom", (_wrap(x), _wrap(n), _wrap(p)))
+
+
+def pbinom(x, n, p) -> Call:
+    """Binom birikimli olasılığı P(X ≤ x), X ~ Bin(n, p)."""
+
+    return Call("pbinom", (_wrap(x), _wrap(n), _wrap(p)))
+
+
+def dpois(x, lam) -> Call:
+    """Poisson olasılık fonksiyonu P(X = x), X ~ Pois(λ)."""
+
+    return Call("dpois", (_wrap(x), _wrap(lam)))
+
+
+def ppois(x, lam) -> Call:
+    """Poisson birikimli olasılığı P(X ≤ x), X ~ Pois(λ)."""
+
+    return Call("ppois", (_wrap(x), _wrap(lam)))
+
+
+def dhyper(x, population, successes, draws) -> Call:
+    """Hipergeometrik olasılık fonksiyonu P(X = x): N birimlik anakütlede r başarı, yerine koymadan n seçim."""
+
+    return Call("dhyper", (_wrap(x), _wrap(population), _wrap(successes), _wrap(draws)))
+
+
+def phyper(x, population, successes, draws) -> Call:
+    """Hipergeometrik birikimli olasılık P(X ≤ x); argümanlar ``dhyper`` ile aynı sırada (x, N, r, n)."""
+
+    return Call("phyper", (_wrap(x), _wrap(population), _wrap(successes), _wrap(draws)))
+
+
+def dnorm(x, mean, sd) -> Call:
+    """Normal yoğunluk f(x), X ~ N(μ, σ²): ortalama ``mean``, standart sapma ``sd``."""
+
+    return Call("dnorm", (_wrap(x), _wrap(mean), _wrap(sd)))
+
+
 def compare(name: str, a, b) -> Call:
     """Gösterge: ``a`` ile ``b`` karşılaştırması doğruysa 1, değilse 0 (``name``: le, lt, ge, gt, eq, ne)."""
 
@@ -214,7 +270,7 @@ def validate(expr: Expr) -> None:
     if isinstance(expr, Call):
         if expr.fn not in FUNCTIONS:
             raise ValueError(f"Desteklenmeyen fonksiyon: {expr.fn}")
-        expected = 2 if expr.fn in _BINARY_FUNCTIONS else 1
+        expected = ARITY.get(expr.fn, 1)
         if len(expr.args) != expected:
             raise ValueError(f"{expr.fn} {expected} argüman alır.")
         for argument in expr.args:
@@ -302,6 +358,8 @@ def evaluate(
         return left**right
     if isinstance(expr, Call):
         values = [again(argument) for argument in expr.args]
+        if expr.fn == "neg":
+            return -values[0]
         if expr.fn == "log":
             return np.log(values[0])
         if expr.fn == "exp":
@@ -332,6 +390,20 @@ def evaluate(
             return float(math.comb(int(values[0]), int(values[1])))
         if expr.fn == "perm":
             return float(math.perm(int(values[0]), int(values[1])))
+        if expr.fn == "dbinom":
+            return stats.binom.pmf(*values)
+        if expr.fn == "pbinom":
+            return stats.binom.cdf(*values)
+        if expr.fn == "dpois":
+            return stats.poisson.pmf(*values)
+        if expr.fn == "ppois":
+            return stats.poisson.cdf(*values)
+        if expr.fn == "dhyper":
+            return stats.hypergeom.pmf(*values)  # (x, N, r, n): scipy'de (k, M, n, N) sırası aynıdır
+        if expr.fn == "phyper":
+            return stats.hypergeom.cdf(*values)
+        if expr.fn == "dnorm":
+            return stats.norm.pdf(*values)
         if expr.fn in COMPARISONS:
             left, right = np.asarray(values[0]), np.asarray(values[1])
             outcome = {
@@ -367,6 +439,12 @@ def format_number(value: float) -> str:
     return repr(float(value))
 
 
+def _is_negation(expr: Expr) -> bool:
+    """İşlem içindeki tek terimli eksi (``neg``) parantez içinde yazılır: (−a)², b − (−a)."""
+
+    return isinstance(expr, Call) and expr.fn == "neg"
+
+
 def _precedence(expr: Expr) -> int:
     return _PRECEDENCE[expr.op] if isinstance(expr, BinOp) else _ATOM
 
@@ -382,6 +460,8 @@ def render(expr: Expr, dialect: Dialect) -> str:
         return dialect.scalar(expr.name) if dialect.scalar is not None else expr.name
     if isinstance(expr, Call):
         arguments = [render(argument, dialect) for argument in expr.args]
+        if expr.fn == "neg":  # iki dilde de aynı yazım; bileşik terim parantez içinde
+            return f"-({arguments[0]})" if isinstance(expr.args[0], BinOp) else f"-{arguments[0]}"
         spec = dialect.functions[expr.fn]
         if "{0}" in spec:
             return spec.format(*arguments)
@@ -389,6 +469,10 @@ def render(expr: Expr, dialect: Dialect) -> str:
     parent = _PRECEDENCE[expr.op]
     left = render(expr.left, dialect)
     right = render(expr.right, dialect)
+    if _is_negation(expr.left) or (expr.op == "^" and isinstance(expr.left, Const) and expr.left.value < 0):
+        left = f"({left})"  # (−a)², (−2)²: üs, tek terimli eksiden önce uygulanırdı
+    if _is_negation(expr.right):
+        right = f"({right})"
     if _precedence(expr.left) < parent or (
         expr.op == "^" and _precedence(expr.left) == parent
     ):

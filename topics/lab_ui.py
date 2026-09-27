@@ -151,7 +151,8 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
     if isinstance(op, ScalarTable):
         return pd.DataFrame({"Büyüklük": table.index, "Değer": [tr_number(v, op.decimals) for v in table["deger"]]})
     if isinstance(op, GroupSummary):
-        formats = {name: (lambda v: tr_number(v, 3)) for name, _, _ in op.columns}
+        formats = {name: _count if stat == "count" else (lambda v: tr_number(v, op.decimals))
+                   for name, _, stat in op.columns}
         return _formatted(table, formats, label(op.by), label)
     if isinstance(op, JoinColumns):
         formats = {name: (lambda v: tr_number(v, op.decimals, op.percent)) for name, _, _ in op.columns}

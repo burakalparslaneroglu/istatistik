@@ -11,8 +11,9 @@ from itertools import combinations, permutations, product
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
-from core.labs.spec import BOX_ROWS, CLASS_COLUMNS, TOTAL, TOTALLED_CLASS_COLUMNS
+from core.labs.spec import BOX_ROWS, CLASS_COLUMNS, COUNT_DISTRIBUTIONS, DENSITIES, TOTAL, TOTALLED_CLASS_COLUMNS
 
 
 def inline_frame(columns: Sequence[str], rows: Sequence[Sequence[object]]) -> pd.DataFrame:
@@ -309,3 +310,59 @@ def tree_layout(frame: pd.DataFrame, first: str, second: str, first_p: str, seco
     paths["y_yol"] = np.arange(len(paths))[::-1].astype(float)
     paths["y_ilk"] = paths.groupby("ilk", sort=False)["y_yol"].transform("mean")
     return paths
+
+
+def support(lower: int, upper: int) -> np.ndarray:
+    """Kesikli değişkenin olası değerleri lower, …, upper (``np.arange(lower, upper + 1)``)."""
+
+    if int(lower) != lower or int(upper) != upper or upper < lower:
+        raise ValueError("Olası değerler lower ≤ upper olan tam sayılardır.")
+    return np.arange(int(lower), int(upper) + 1)
+
+
+def rectangle_midpoints(lower: float, width: float, count: int) -> np.ndarray:
+    """Dikdörtgenlerin orta noktaları lower + width·(i − 0,5), i = 1, …, count (üretilen kodla aynı işlem sırası)."""
+
+    return lower + width * (np.arange(1, count + 1) - 0.5)
+
+
+def density(distribution: str, first: float, second: float, x) -> np.ndarray:
+    """Yoğunluk f(x): normal (μ = first, σ = second) ya da tek-düze U(a = first, b = second)."""
+
+    if distribution not in DENSITIES:
+        raise ValueError(f"Desteklenmeyen yoğunluk: {distribution}")
+    if distribution == "normal":
+        if second <= 0:
+            raise ValueError("Standart sapma pozitif olmalıdır.")
+        return stats.norm.pdf(x, first, second)
+    if second <= first:
+        raise ValueError("Tek-düze dağılımda b > a olmalıdır.")
+    return stats.uniform.pdf(x, first, second - first)
+
+
+def density_grid(distribution: str, first: float, second: float, x_range: tuple[float, float],
+                 points: int = 401) -> pd.DataFrame:
+    """Yoğunluk grafiğinin eğrisi: yatay eksende eşit aralıklı ``points`` nokta ve f(x)."""
+
+    low, high = x_range
+    if not low < high:
+        raise ValueError("Yatay eksenin alt sınırı üst sınırından küçük olmalıdır.")
+    x = np.linspace(low, high, points)
+    return pd.DataFrame({"x": x, "f": density(distribution, first, second, x)})
+
+
+def draw_count(rng: np.random.Generator, distribution: str, parameters: Sequence[float], size: int) -> np.ndarray:
+    """Sayım çekilişi, üretilen Python koduyla aynı çağrı: ``rng.binomial``, ``rng.poisson`` ya da
+    ``rng.hypergeometric``."""
+
+    if COUNT_DISTRIBUTIONS.get(distribution) != len(parameters):
+        raise ValueError(f"{distribution}: parametre sayısı uygun değil.")
+    if distribution == "binomial":
+        n, p = parameters
+        return rng.binomial(int(n), p, size=size).astype(float)
+    if distribution == "poisson":
+        return rng.poisson(parameters[0], size=size).astype(float)
+    population, successes, draws = (int(value) for value in parameters)
+    if not 0 <= successes <= population or not 0 <= draws <= population:
+        raise ValueError("Hipergeometrik: 0 ≤ r ≤ N ve 0 ≤ n ≤ N olmalıdır.")
+    return rng.hypergeometric(successes, population - successes, draws, size=size).astype(float)

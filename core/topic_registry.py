@@ -41,10 +41,16 @@ TOPICS: tuple[TopicMetadata, ...] = (
         "Bir deneyin sayısal sonucunun olası değerlerine olasılıklar nasıl dağılır ve bu dağılımın merkezi, "
         "yayılımı ve iki değişkenin birlikte hareketi nasıl ölçülür?",
     ),
-    TopicMetadata("konu09", 9, "Binom, Poisson ve Hipergeometrik Dağılımlar", "Binom, Poisson ve Hipergeometrik"),
+    TopicMetadata(
+        "konu09", 9, "Binom, Poisson ve Hipergeometrik Dağılımlar", "Binom, Poisson ve Hipergeometrik",
+        "Bir sayım hangi deney yapısından doğar, buna göre binom, Poisson ve hipergeometrik modellerden hangisi "
+        "seçilir ve olasılıkları, beklenen değeri ve varyansı nasıl hesaplanır?",
+    ),
     TopicMetadata(
         "konu10", 10, "Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım",
         "Sürekli Rassal Değişkenler ve Normal Dağılım",
+        "Sürekli bir değişkende olasılık neden eğri altındaki alandır ve normal dağılımda z-dönüşümü farklı "
+        "ölçekleri nasıl ortak bir dile çevirir?",
     ),
     TopicMetadata("konu11", 11, "Normal Olasılıklar ve Üstel Dağılım", "Normal Olasılıklar ve Üstel Dağılım"),
     TopicMetadata(

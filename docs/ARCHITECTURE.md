@@ -13,14 +13,14 @@ sezgi kurar ve kavramları sınar.
 - `topics/`: Streamlit bileşenleri ve öğrenciye gösterilen metin.
 - `tests/`: sözleşme, sayısal doğruluk, üretilen kod ve AppTest denetimleri.
 
-## Yeni yapı (Konu 1–8)
+## Yeni yapı (Konu 1–10)
 
 | Dosya | Görev |
 |---|---|
 | `core/topic_registry.py`, `core/types.py` | 12 konunun başlığı (ders notlarındaki bölüm adı), kısa adı ve yönlendirici sorusu |
 | `core/labs/spec.py` | Uygulama tanım şeması: işlemler, notlardaki sayılar (`Check`), tekrarlanabilirlik sınıfı |
 | `core/labs/expr.py` | Türetilmiş değişken ve skalerler için küçük ifade dili; pandas'ta değerlendirilir, iki dile çevrilir |
-| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi, ağırlıklı toplam), sayımdan gözlem verisi, çok aşamalı deneyin sonuçları, kombinasyon ve permütasyon listeleri, kategorik ve kesikli çekiliş, sınıf tablosu, gövde–yaprak, yüzdelik, kutu grafiği özeti, olasılık ağacının yerleşimi |
+| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi, ağırlıklı toplam), sayımdan gözlem verisi, çok aşamalı deneyin sonuçları, kombinasyon ve permütasyon listeleri, kategorik, kesikli ve sayım çekilişi, sınıf tablosu, gövde–yaprak, yüzdelik, kutu grafiği özeti, olasılık ağacının yerleşimi, olası değerler, dikdörtgen orta noktaları, yoğunluk eğrisi |
 | `core/labs/runner.py` | Tanımı çalıştırır ve notlarla karşılaştırır |
 | `core/labs/konuNN.py`, `core/labs/registry.py` | Konu uygulamaları |
 | `core/labs/sezgi.py`, `core/labs/sezgi_konuNN.py` | Sezgi deneylerinin şeması ve konu deneyleri |
@@ -30,7 +30,7 @@ sezgi kurar ve kavramları sınar.
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
-Eski yapıdaki konular (9–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
+Eski yapıdaki konular (11–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
 `core/ui_components.render_plotly`'yi kullanır. Bir konu yeni yapıya taşındığında eski modülü ve testleri
 aynı blokta kaldırılır.
 
@@ -121,10 +121,36 @@ tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde
 - Konu 8 Deney 1'in varsayılan ayarları notlardaki Şekil 8.8'in veri üretim sürecidir (Tablo 8.1'in dağılımı,
   n = 100, tohum 217); şekildeki birikimli ortalama yolu Python'da birebir üretilir.
 
+### Özel kesikli dağılımlar ve sürekli dağılımlar (Konu 9–10)
+
+- İfade dilinde dağılım fonksiyonları: `dbinom`, `pbinom` (x, n, p), `dpois`, `ppois` (x, λ), `dhyper`, `phyper`
+  (x, N, r, n) ve `dnorm` (x, μ, σ). Python'da `scipy.stats` (`binom.pmf`, `poisson.cdf`, `hypergeom.pmf(x, N, r, n)`,
+  `norm.pdf`), R'de temel `dbinom`, `ppois`, `dnorm`; R'nin hipergeometrik sırası farklı olduğu için
+  `dhyper(x, r, N − r, n)` yazılır. Fonksiyonların argüman sayısı `expr.ARITY` ile denetlenir.
+- Tek terimli eksi `neg`: e^(−λ) için `exp(neg(λ))`; işlem içinde parantezle yazılır (70 + (−2) * 10). Önceki
+  konuların ürettiği kod bu eklemeden etkilenmez (bayt düzeyinde aynıdır).
+- `Support`: kesikli değişkenin olası değerleri lower, …, upper; olasılıklar ardından `Derive` ile eklenir.
+  `RowSum`: satır toplamı (ör. Bernoulli dizisindeki başarı sayısı X = Y₁ + ⋯ + Yₙ). `GroupSummary` grupları sayı
+  da olabilir; R'de `tapply` sonucu konumla değil adla (`"0"`, `"1"`, …) seçilir.
+- `Rectangles`: [a, b] aralığını genişliği w olan dikdörtgenlere böler (orta noktalar a + w(i − 0,5)); eğri
+  altındaki alan yükseklik × genişliklerin toplamıdır. Konu 10'da 68–95–99,7 alanları Φ tablosu kullanılmadan
+  böyle doğrulanır; tablo hesabı Konu 11'e bırakılır.
+- `DrawCount`: sayım çekilişi, binom (n, p), Poisson (λ) ve hipergeometrik (N, r, n); Python'da uygulamayla aynı
+  çağrı (`rng.binomial`, `rng.poisson`, `rng.hypergeometric(ngood=r, nbad=N − r, nsample=n)`), R'de `rbinom`,
+  `rpois`, `rhyper(m = r, n = N − r, k = n)`.
+- `DensityPlot`: normal ya da tek-düze yoğunluk eğrisi; boyalı aralıklar olasılık alanıdır, dikey başvuru
+  çizgileri eklenebilir. Yatay eksen sabittir (`x_range`); `y_max` verilirse dikey eksen de sabittir ve σ
+  büyüyünce eğrinin basıklaştığı görülür. Tek-düzede scipy'nin konum–ölçek biçimi `uniform.pdf(x, a, b − a)`,
+  R'de `dunif(x, a, b)`.
+- Deneylerin varsayılan ayarları notların örnekleridir (Şekil 9.6'nın p = 0,20 paneli, §9.4'te λ = 3, Tablo
+  9.1'deki N = 40, r = 4, n = 8; N(70, 10²), U(120, 140)). Poisson deneyinde gösterilen değerler
+  0, …, ⌈2λ + 4√λ + 6⌉ aralığıdır; bu sınırı aşma olasılığı kaydırıcının her değerinde 10⁻¹⁰'dan küçüktür.
+
 ## Sezgi deneyleri
 
 Bir deney (`SimExperiment`), kaydırıcı değerlerinden işlem listesi üreten bir tanımdır. Deneyde tek bir
-`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tekdüze, beta, gamma) ve `DrawCategory` çekilişleri
+`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tekdüze, beta, gamma), `DrawCount` (binom, Poisson,
+hipergeometrik) ve `DrawCategory` çekilişleri
 işlem sırasıyla ondan yapılır. Kategorik çekiliş, her gözlem için u ~ Tekdüze(0, 1) çekip birikimli olasılığı
 u'yu ilk aşan kategoriyi seçer (Python `np.searchsorted(..., side="right")`, R `findInterval(u, esik) + 1`; son eşik
 yuvarlama hatasına karşı tam 1'dir). Üretilen Python kodu aynı sırayla çektiği için uygulamadaki sayıların
@@ -161,8 +187,11 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
 - `tests/test_topic_contracts.py`: konu sırası, render fonksiyonları, yeni yapıya taşınan konuların sözleşmesi.
 - `tests/test_app_smoke.py`: AppTest ile kabuk, adımlar, deneyler, soru kontrolü, konu ve kod dili geçişi.
 - `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`, `tests/test_konu05_06_content.py`,
-  `tests/test_konu07_08_content.py`: notlarla veri uyumu, yüzdelik kuralının Hyndman–Fan tip 6 ile özdeşliği,
-  Konu 6 Deney 1'in Şekil 6.6'yı ve Konu 8 Deney 1'in Şekil 8.8'i birebir üretmesi, mozaik ve ağaç
-  kuralları, kesikli çekilişin ters dağılım fonksiyonu ve deneylerin istatistiksel doğruluğu.
+  `tests/test_konu07_08_content.py`, `tests/test_konu09_10_content.py`: notlarla veri uyumu, yüzdelik kuralının
+  Hyndman–Fan tip 6 ile özdeşliği, Konu 6 Deney 1'in Şekil 6.6'yı ve Konu 8 Deney 1'in Şekil 8.8'i birebir
+  üretmesi, mozaik ve ağaç kuralları, kesikli çekilişin ters dağılım fonksiyonu, Şekil 9.6 ve 9.8'in basılı
+  değerleri, dikdörtgen toplamlarının normal alanları vermesi ve deneylerin istatistiksel doğruluğu.
+- `tests/test_lab_engine.py`: tablo hesapları, ifade dili (dağılım fonksiyonları, tek terimli eksi), yeni
+  işlemler (`Support`, `RowSum`, `Rectangles`, `DrawCount`, `DensityPlot`) ve kod üreticisi yardımcıları.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

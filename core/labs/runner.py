@@ -27,9 +27,11 @@ from core.labs.spec import (
     Count,
     CrossTab,
     Derive,
+    DensityPlot,
     DotPlot,
     Draw,
     DrawCategory,
+    DrawCount,
     DrawDiscrete,
     Event,
     FrequencyTable,
@@ -52,6 +54,8 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    Rectangles,
+    RowSum,
     Scalar,
     ScalarTable,
     ScalarTarget,
@@ -62,6 +66,7 @@ from core.labs.spec import (
     Statistic,
     StatTarget,
     StemLeaf,
+    Support,
     TableTarget,
     TreeDiagram,
     VariableTypes,
@@ -219,6 +224,13 @@ def execute(op: Operation, state: LabState) -> None:
         if sum(op.sizes) != len(frame) or len(op.sizes) != len(op.labels):
             raise ValueError("Grup büyüklüklerinin toplamı gözlem sayısına eşit olmalıdır.")
         frame[op.name] = np.repeat(np.asarray(op.labels, dtype=object), op.sizes)
+    elif isinstance(op, Support):
+        state.frames[op.frame] = pd.DataFrame({op.name: T.support(op.lower, op.upper)})
+    elif isinstance(op, Rectangles):
+        state.frames[op.frame] = pd.DataFrame({op.name: T.rectangle_midpoints(op.lower, op.width, op.count)})
+    elif isinstance(op, RowSum):
+        frame = state.frames[op.frame]
+        frame[op.name] = frame[list(op.columns)].sum(axis=1).astype(float)
     elif isinstance(op, Derive):
         frame = state.frames[op.frame]
         frame[op.name] = E.evaluate(op.expr, frame, scalar=_scalar(state))
@@ -240,6 +252,9 @@ def execute(op: Operation, state: LabState) -> None:
             frame[op.name] = rng.gamma(op.first, op.second, size=len(frame))
         else:
             raise ValueError(f"Desteklenmeyen dağılım: {op.distribution}")
+    elif isinstance(op, DrawCount):
+        frame = state.frames[op.frame]
+        frame[op.name] = T.draw_count(state.rng, op.distribution, op.parameters, len(frame))
     elif isinstance(op, DrawCategory):
         frame = state.frames[op.frame]
         u = state.rng.random(len(frame))
@@ -351,6 +366,8 @@ def execute(op: Operation, state: LabState) -> None:
         })
     elif isinstance(op, (MosaicChart, HeatMap)):
         state.plots[plot_key(op)] = without_total(state.tables[op.table]).astype(float)
+    elif isinstance(op, DensityPlot):
+        state.plots[plot_key(op)] = T.density_grid(op.distribution, op.first, op.second, op.x_range)
     elif isinstance(op, TreeDiagram):
         state.plots[plot_key(op)] = T.tree_layout(state.frames[op.frame], op.first, op.second, op.first_p, op.second_p)
     elif isinstance(op, MonteCarlo):
