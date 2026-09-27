@@ -13,14 +13,14 @@ sezgi kurar ve kavramları sınar.
 - `topics/`: Streamlit bileşenleri ve öğrenciye gösterilen metin.
 - `tests/`: sözleşme, sayısal doğruluk, üretilen kod ve AppTest denetimleri.
 
-## Yeni yapı (Konu 1–6)
+## Yeni yapı (Konu 1–8)
 
 | Dosya | Görev |
 |---|---|
 | `core/topic_registry.py`, `core/types.py` | 12 konunun başlığı (ders notlarındaki bölüm adı), kısa adı ve yönlendirici sorusu |
 | `core/labs/spec.py` | Uygulama tanım şeması: işlemler, notlardaki sayılar (`Check`), tekrarlanabilirlik sınıfı |
 | `core/labs/expr.py` | Türetilmiş değişken ve skalerler için küçük ifade dili; pandas'ta değerlendirilir, iki dile çevrilir |
-| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi, ağırlıklı toplam), sayımdan gözlem verisi, çok aşamalı deneyin sonuçları, kombinasyon ve permütasyon listeleri, kategorik çekiliş, sınıf tablosu, gövde–yaprak, yüzdelik, kutu grafiği özeti |
+| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi, ağırlıklı toplam), sayımdan gözlem verisi, çok aşamalı deneyin sonuçları, kombinasyon ve permütasyon listeleri, kategorik ve kesikli çekiliş, sınıf tablosu, gövde–yaprak, yüzdelik, kutu grafiği özeti, olasılık ağacının yerleşimi |
 | `core/labs/runner.py` | Tanımı çalıştırır ve notlarla karşılaştırır |
 | `core/labs/konuNN.py`, `core/labs/registry.py` | Konu uygulamaları |
 | `core/labs/sezgi.py`, `core/labs/sezgi_konuNN.py` | Sezgi deneylerinin şeması ve konu deneyleri |
@@ -30,7 +30,7 @@ sezgi kurar ve kavramları sınar.
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
-Eski yapıdaki konular (7–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
+Eski yapıdaki konular (9–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
 `core/ui_components.render_plotly`'yi kullanır. Bir konu yeni yapıya taşındığında eski modülü ve testleri
 aynı blokta kaldırılır.
 
@@ -101,6 +101,26 @@ tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde
 - İfade dilinde `cummean` (birikimli ortalama), `seq` (1, …, n), `factorial`, `comb`, `perm` vardır; R'de
   `choose` ve `factorial` ile yazılır.
 
+### Koşullu olasılık, rassal değişken ve ortak dağılım (Konu 7–8)
+
+- `MosaicChart`: çapraz tablonun (sayılar ya da ortak olasılıklar) her satırı bir sütundur; sütun genişliği
+  satırın marjinal payı, sütun içindeki yükseklik satır verildiğinde koşullu pay, parça alanı ortak olasılıktır.
+  İlk sütun kategorisi en üstte çizilir (notlardaki Şekil 7.2 gibi).
+- `TreeDiagram`: iki aşamalı olasılık ağacı, soldan sağa. Veri çerçevesinin her satırı bir tam yoldur (ilk aşama,
+  ikinci aşama, ilk dalın olasılığı, ikinci dalın koşullu olasılığı); ilk yol en üstte, ilk aşamadaki dal kendi
+  yollarının ortasında durur ve yol sonunda ortak olasılık yazılır (`tables.tree_layout`; aynı dalın olasılığı
+  her yolda aynı olmalıdır). Ağaçta eksen yoktur (`AXISLESS_CHARTS`).
+- `HeatMap`: tablonun her hücresi bir kare; ilk satır üstte, sütun adları üstte (notlardaki ortak dağılım
+  tablosu gibi). Renk sıfırda ana rengin açık tonundan (`HEAT_LOW`) başlar; sıfır hücreler de zeminden ayrılır.
+- `DrawDiscrete`: kesikli rassal değişken; ters dağılım fonksiyonu yöntemi (u ~ Tekdüze(0, 1), X birikimli
+  olasılığı u'yu ilk aşan değer), `DrawCategory` ile aynı kural, sonuç sayıdır.
+- Sütun grafiğinde sayısal kategoriler (ör. x = 0, 1, 2) Python kodunda metne çevrilir (`astype(str)`):
+  matplotlib sayısal konumlara ara eksen işaretleri koyardı. R'de satır içi veride negatif değer varsa etiket
+  sütunun altına yazılır. Python'da değer etiketleri için üstte boşluk bırakılır (`ax.margins`); R'de çizgi
+  grafiği açıklaması serinin üstündeki boş bantta durur.
+- Konu 8 Deney 1'in varsayılan ayarları notlardaki Şekil 8.8'in veri üretim sürecidir (Tablo 8.1'in dağılımı,
+  n = 100, tohum 217); şekildeki birikimli ortalama yolu Python'da birebir üretilir.
+
 ## Sezgi deneyleri
 
 Bir deney (`SimExperiment`), kaydırıcı değerlerinden işlem listesi üreten bir tanımdır. Deneyde tek bir
@@ -140,8 +160,9 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
 - `tests/test_all_quizzes.py`: soru sayısı ve türleri, kavram tekilliği, bölüm kapsamı, cevap anahtarı dengesi.
 - `tests/test_topic_contracts.py`: konu sırası, render fonksiyonları, yeni yapıya taşınan konuların sözleşmesi.
 - `tests/test_app_smoke.py`: AppTest ile kabuk, adımlar, deneyler, soru kontrolü, konu ve kod dili geçişi.
-- `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`, `tests/test_konu05_06_content.py`:
-  notlarla veri uyumu, yüzdelik kuralının Hyndman–Fan tip 6 ile özdeşliği, Konu 6 Deney 1'in notlardaki
-  Şekil 6.6'yı birebir üretmesi ve deneylerin istatistiksel doğruluğu.
+- `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`, `tests/test_konu05_06_content.py`,
+  `tests/test_konu07_08_content.py`: notlarla veri uyumu, yüzdelik kuralının Hyndman–Fan tip 6 ile özdeşliği,
+  Konu 6 Deney 1'in Şekil 6.6'yı ve Konu 8 Deney 1'in Şekil 8.8'i birebir üretmesi, mozaik ve ağaç
+  kuralları, kesikli çekilişin ters dağılım fonksiyonu ve deneylerin istatistiksel doğruluğu.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

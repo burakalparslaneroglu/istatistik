@@ -95,6 +95,14 @@ def _boundary(value: float) -> str:
     return tr_number(value, 0 if float(value).is_integer() else 2)
 
 
+def _index_text(item) -> str:
+    """Satır adı: ondalık sayılar Türkçe yazımla (1,5; −1); ondalıksız değerde ",0" yazılmaz."""
+
+    if isinstance(item, (float, np.floating)) and np.isfinite(item):
+        return f"{float(item):.10g}".replace(".", ",").replace("-", "−")
+    return str(item)
+
+
 def _formatted(table: pd.DataFrame, formats: dict[str, Callable[[float], str]], index_label: str,
                label: Callable[[str], str]) -> pd.DataFrame:
     """Sayıları Türkçe biçimde metne çevirir; satır adları ilk sütun olur."""
@@ -105,7 +113,7 @@ def _formatted(table: pd.DataFrame, formats: dict[str, Callable[[float], str]], 
         values = table[column]
         shown[column] = [formatter(value) for value in values] if formatter else values
     shown = shown.rename(columns=lambda name: _COLUMN_LABELS.get(str(name), label(str(name))))
-    shown.index = [str(item) for item in shown.index]
+    shown.index = [_index_text(item) for item in shown.index]
     return shown.rename_axis(index_label).reset_index()
 
 

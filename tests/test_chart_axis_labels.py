@@ -80,7 +80,7 @@ def test_every_lab_and_experiment_chart_has_axis_titles():
     import importlib
 
     from core.labs.registry import LABS
-    from core.labs.spec import CHARTS, Histogram, PieChart
+    from core.labs.spec import AXISLESS_CHARTS, CHARTS, Histogram
 
     experiments = []
     for key in LABS:
@@ -89,6 +89,10 @@ def test_every_lab_and_experiment_chart_has_axis_titles():
     operations = [op for spec in LABS.values() for step in spec.steps for op in step.operations]
     operations += [op for experiment in experiments for op in experiment.build(experiment.defaults())]
     for op in operations:
-        if isinstance(op, CHARTS) and not isinstance(op, PieChart):
-            assert op.title.strip() and op.x_label.strip(), op
-            assert isinstance(op, Histogram) or op.y_label.strip(), op
+        if not isinstance(op, CHARTS):
+            continue
+        assert op.title.strip(), op
+        if isinstance(op, AXISLESS_CHARTS):  # pasta dilimleri ve olasılık ağacında eksen yoktur
+            continue
+        assert op.x_label.strip(), op
+        assert isinstance(op, Histogram) or op.y_label.strip(), op

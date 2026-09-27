@@ -249,6 +249,22 @@ class DrawCategory:
     by: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class DrawDiscrete:
+    """Kesikli rassal değişken: ``values`` değerlerini ``probabilities`` olasılıklarıyla alır.
+
+    Ters dağılım fonksiyonu yöntemi: her gözlem için u ~ Tekdüze(0, 1) çekilir; X, birikimli olasılığı F(x) u'yu
+    ilk aşan değerdir (birikimli olasılıkların sonuncusu 1 kabul edilir). ``DrawCategory`` ile aynı kural; sonuç
+    sayıdır, kategori etiketi değildir.
+    """
+
+    frame: str
+    name: str
+    values: tuple[float, ...]
+    probabilities: tuple[float, ...]
+    comment: str
+
+
 # --- Sayma ve özet ---------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -628,6 +644,56 @@ class DotPlot:
 
 
 @dataclass(frozen=True)
+class MosaicChart:
+    """Mozaik grafiği: çapraz tablonun (sayılar ya da ortak olasılıklar) her satırı bir sütundur.
+
+    Sütun genişliği satır toplamının genel toplama oranıdır (marjinal olasılık); sütun içindeki parçalar satırdaki
+    hücrelerin satır toplamına oranıdır (koşullu olasılık). Böylece her parçanın alanı ortak olasılığa eşittir ve
+    parçaya bu değer yazılır. ``Toplam`` satırı ve sütunu çizilmez.
+    """
+
+    table: str
+    x_label: str
+    y_label: str
+    title: str
+    decimals: int = 2
+
+
+@dataclass(frozen=True)
+class TreeDiagram:
+    """İki aşamalı olasılık ağacı, soldan sağa: kök, ilk aşamanın dalları, ikinci aşamanın dalları.
+
+    Veri çerçevesinin her satırı bir tam yoldur: ``first`` ve ``second`` aşamaların kategorileri, ``first_p`` ilk
+    dalın olasılığı, ``second_p`` ikinci dalın koşullu olasılığıdır. Yol sonunda ortak olasılık
+    ``first_p × second_p`` yazılır. Kategoriler veri sırasıyla, ilk yol en üstte çizilir. Eksen yoktur.
+    """
+
+    frame: str
+    first: str
+    second: str
+    first_p: str
+    second_p: str
+    root: str
+    title: str
+    decimals: int = 3
+
+
+@dataclass(frozen=True)
+class HeatMap:
+    """Isı haritası: tablonun her hücresi bir kare; renk değer arttıkça koyulaşır ve değer hücreye yazılır.
+
+    Satırlar yukarıdan aşağıya tablo sırasıyla, sütunlar soldan sağa (notlardaki ortak dağılım tablosu gibi).
+    ``Toplam`` satırı ve sütunu çizilmez.
+    """
+
+    table: str
+    x_label: str
+    y_label: str
+    title: str
+    decimals: int = 2
+
+
+@dataclass(frozen=True)
 class MonteCarlo:
     """``body`` işlemlerini ``reps`` kez tekrarlar; her tekrarda ``collect`` ifadelerini toplar.
 
@@ -657,6 +723,7 @@ Operation = Union[
     NewSample,
     Draw,
     DrawCategory,
+    DrawDiscrete,
     Shape,
     Count,
     Statistic,
@@ -681,13 +748,18 @@ Operation = Union[
     Histogram,
     ClassHistogram,
     DotPlot,
+    MosaicChart,
+    TreeDiagram,
+    HeatMap,
     MonteCarlo,
 ]
 
 CHARTS = (
     BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
-    DotPlot,
+    DotPlot, MosaicChart, TreeDiagram, HeatMap,
 )
+AXISLESS_CHARTS = (PieChart, TreeDiagram)
+"""Ekseni olmayan grafikler: eksen adı gerekmez (pasta dilimleri, olasılık ağacı)."""
 
 
 # --- Notlarla karşılaştırma -------------------------------------------------

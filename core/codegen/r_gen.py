@@ -7,6 +7,7 @@ rastgele sayı üreteci numpy'ninkinden farklıdır: aynı tohum aynı çekiliş
 from __future__ import annotations
 
 from core.codegen.base import (
+    HEAT_LOW,
     PALETTE,
     REFERENCE_COLORS,
     Generator,
@@ -32,18 +33,21 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    DrawDiscrete,
     Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
     Groups,
     GroupSummary,
+    HeatMap,
     Histogram,
     InlineData,
     JoinColumns,
     LineChart,
     MapCodes,
     MonteCarlo,
+    MosaicChart,
     NewSample,
     Operation,
     Outcomes,
@@ -61,6 +65,7 @@ from core.labs.spec import (
     StatTarget,
     StemLeaf,
     TableTarget,
+    TreeDiagram,
     VariableTypes,
 )
 from core.labs.tables import class_edges
@@ -119,6 +124,15 @@ _BOX_SUMMARY = [
     "  c(en_kucuk = x[1], q1 = q1, medyan = medyan, q3 = q3, en_buyuk = x[length(x)], iqr = iqr,",
     "    alt_sinir = alt, ust_sinir = ust, alt_biyik = min(icerde), ust_biyik = max(icerde),",
     "    aykiri_sayisi = sum(x < alt | x > ust))",
+    "}",
+]
+_TREE_BOX = [
+    "# Olasılık ağacında düğüm: metnin çevresinde çerçeve (temel R'de metin kutusu yoktur)",
+    "kutu <- function(x, y, etiket) {",
+    "  w <- strwidth(etiket) / 2 + 0.05",
+    "  h <- strheight(etiket) / 2 + 0.12",
+    f'  rect(x - w, y - h, x + w, y + h, col = "white", border = "{PALETTE[0]}")',
+    "  text(x, y, etiket)",
     "}",
 ]
 _ORDERED_SELECTIONS = [
@@ -200,7 +214,7 @@ class RGenerator(Generator):
     def helpers(self, operations: tuple[Operation, ...], *, with_checks: bool) -> list[str]:
         lines: list[str] = []
         flat = flatten(operations)
-        labelled = (BarChart, CompareBarChart, PieChart)
+        labelled = (BarChart, CompareBarChart, PieChart, MosaicChart, TreeDiagram, HeatMap)
         if any(isinstance(op, labelled) or (isinstance(op, (ClassHistogram, GroupedBarChart)) and op.labels)
                for op in flat):
             lines += _NUMBER_TEXT + [""]
@@ -213,6 +227,8 @@ class RGenerator(Generator):
             lines += _BOX_SUMMARY + [""]
         if any(isinstance(op, Selections) and op.ordered for op in flat):
             lines += _ORDERED_SELECTIONS + [""]
+        if any(isinstance(op, TreeDiagram) for op in flat):
+            lines += _TREE_BOX + [""]
         if with_checks:
             lines += [
                 "# Hesaplanan değeri ders notlarındaki basılı değerle karşılaştırır",
@@ -287,6 +303,16 @@ class RGenerator(Generator):
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {call}"]
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
+        if isinstance(op, DrawDiscrete):
+            return [
+                f"# {op.comment}",
+                "# u ~ Tekdüze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
+                f"u <- runif(nrow({op.frame}))",
+                f"{op.name}_degerler <- {_vector(op.values)}",
+                f"esik <- cumsum({_vector(op.probabilities)})",
+                "esik[length(esik)] <- 1  # yuvarlama hatasına karşı son eşik tam 1",
+                f"{op.frame}${op.name} <- {op.name}_degerler[findInterval(u, esik) + 1]",
+            ]
         if isinstance(op, Shape):
             columns = (f"length(setdiff(names({op.frame}), {_vector(op.exclude)}))  # kimlik sütunu değişken sayılmaz"
                        if op.exclude else f"ncol({op.frame})")
@@ -385,6 +411,12 @@ class RGenerator(Generator):
             return self._box_plot(op)
         if isinstance(op, Histogram):
             return self._histogram(op)
+        if isinstance(op, MosaicChart):
+            return self._mosaic(op)
+        if isinstance(op, TreeDiagram):
+            return self._tree(op)
+        if isinstance(op, HeatMap):
+            return self._heatmap(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"R üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -751,14 +783,21 @@ class RGenerator(Generator):
     def _line(self, op: LineChart) -> list[str]:
         kind = "b" if op.markers else "l"
         values = [f"{op.frame}${op.y}", *(name for name, _ in op.references)]
-        # Başvuru çizgileri dikey eksenin içinde kalsın: eksen seriyi ve başvuru değerlerini kapsar.
-        limits = [f"     ylim = range(c({', '.join(values)})),"] if op.references else []
+        # Başvuru çizgileri dikey eksenin içinde kalsın: eksen seriyi ve başvuru değerlerini kapsar. Üstteki boşluk
+        # açıklama içindir; açıklama seriyi ve çizgileri örtmez.
+        limits = ['     ylim = c(aralik[1], aralik[2] + 0.3 * diff(aralik)), yaxt = "n",'] if op.references else []
+        setup = [
+            f"aralik <- range(c({', '.join(values)}))",
+            "# Üstteki boşluk açıklama için: seri ve başvuru çizgileri alttaki aralıkta kalır",
+        ] if op.references else []
         lines = [
+            *setup,
             f'plot({op.frame}${op.x}, {op.frame}${op.y}, type = "{kind}", pch = 19, lwd = 2, col = "{PALETTE[0]}",',
             *limits,
             f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
         ]
         if op.references:
+            lines.append("axis(2, at = pretty(aralik))  # eksen değerleri yalnız verinin aralığında")
             colors, ltys, labels = [f'"{PALETTE[0]}"'], ["1"], [text(op.y_label)]
             for index, (name, label) in enumerate(op.references):
                 color, lty = _REFERENCE_STYLES[index % len(_REFERENCE_STYLES)]
@@ -767,7 +806,7 @@ class RGenerator(Generator):
                 ltys.append(lty)
                 labels.append(text(label))
             lines.append(
-                f'legend("topright", legend = c({", ".join(labels)}), col = c({", ".join(colors)}), '
+                f'legend("top", legend = c({", ".join(labels)}), col = c({", ".join(colors)}), '
                 f'lty = c({", ".join(ltys)}), lwd = 2, bty = "n")'
             )
         return lines
@@ -845,11 +884,17 @@ class RGenerator(Generator):
                 "box(bty = \"l\")",
                 f"text(konum, cizim, labels = {labels}, pos = 3, xpd = TRUE)",
             ]
+        if op.x is not None and (op.source, op.y) in self.signed_columns:
+            position = "ifelse(cizim < 0, 1, 3)"
+            placement = ["# Etiket pozitif sütunun üstüne, negatif sütunun altına yazılır"]
+        else:
+            position, placement = "3", []
         return lines + [
             f'konum <- barplot(cizim, col = "{PALETTE[0]}", border = NA, ylim = range(0, cizim) * 1.15,',
             f'                 xlab = "{x_label}", ylab = "{y_label}",',
             f'                 main = "{title}")',
-            f"text(konum, cizim, labels = {labels}, pos = 3, xpd = TRUE)",
+            *placement,
+            f"text(konum, cizim, labels = {labels}, pos = {position}, xpd = TRUE)",
         ]
 
     def _bars_with_legend(self, x_label: str, y_label: str, title: str, stacked: bool, decimals: int,
@@ -953,6 +998,83 @@ class RGenerator(Generator):
             f"       lty = c({', '.join(ltys)}), col = c({', '.join(colors)}), lwd = 2, bty = \"n\")",
         ]
 
+    def _mosaic(self, op: MosaicChart) -> list[str]:
+        x_label, y_label, title = _quote(op.x_label), _quote(op.y_label), _quote(op.title)
+        return [
+            f"cizim <- {self._chart_matrix(op.table)}  # hücreler: sayılar ya da ortak olasılıklar",
+            "genislik <- rowSums(cizim) / sum(cizim)  # sütun genişliği: satırın marjinal payı",
+            "pay <- cizim / rowSums(cizim)  # sütun içindeki pay: satır verildiğinde koşullu olasılık",
+            "sol <- cumsum(genislik) - genislik  # sütunların sol kenarı",
+            f"renkler <- {_colors(len(PALETTE))}[seq_len(ncol(cizim))]",
+            'plot(NA, xlim = c(0, 1), ylim = c(0, 1), xaxs = "i", yaxs = "i", xaxt = "n",',
+            f'     xlab = "{x_label}", ylab = "{y_label}", main = "{title}")',
+            "axis(1, at = sol + genislik / 2, labels = rownames(cizim), tick = FALSE)",
+            "taban <- rep(0, nrow(cizim))",
+            "for (j in rev(seq_len(ncol(cizim)))) {  # ilk sütun en üstte",
+            '  rect(sol, taban, sol + genislik, taban + pay[, j], col = renkler[j], border = "white", lwd = 2)',
+            "  # parçanın alanı = ortak olasılık",
+            "  text(sol + genislik / 2, taban + pay[, j] / 2,",
+            f'       paste0(colnames(cizim)[j], "\\n", sayi_metni(genislik * pay[, j], {op.decimals})), col = "white")',
+            "  taban <- taban + pay[, j]",
+            "}",
+        ]
+
+    def _tree(self, op: TreeDiagram) -> list[str]:
+        f, s, fp, sp = op.first, op.second, op.first_p, op.second_p
+        return [
+            "# Olasılık ağacı (soldan sağa): her satır bir yol, ilk yol en üstte",
+            f"yollar <- {op.frame}",
+            "n_yol <- nrow(yollar)",
+            "y_yol <- rev(seq_len(n_yol) - 1)",
+            f"ilk_dallar <- unique(yollar${f})",
+            f"y_ilk <- sapply(ilk_dallar, function(dal) mean(y_yol[yollar${f} == dal]))",
+            "y_kok <- mean(y_ilk)  # kök, ilk dalların ortasında",
+            "plot.new()",
+            "plot.window(xlim = c(-0.3, 3), ylim = c(-0.6, n_yol - 0.4))",
+            f'title(main = "{_quote(op.title)}")',
+            "for (i in seq_along(ilk_dallar)) {",
+            f"  p <- yollar${fp}[yollar${f} == ilk_dallar[i]][1]",
+            f'  segments(0, y_kok, 1, y_ilk[i], col = "{PALETTE[0]}", lwd = 2)',
+            f'  text(0.5, (y_kok + y_ilk[i]) / 2, sayi_metni(p, 2), pos = 3, col = "{REFERENCE_COLORS[0]}")',
+            "}",
+            "for (i in seq_len(n_yol)) {",
+            f"  j <- match(yollar${f}[i], ilk_dallar)",
+            f'  segments(1, y_ilk[j], 2, y_yol[i], col = "{PALETTE[0]}", lwd = 2)',
+            f"  text(1.5, (y_ilk[j] + y_yol[i]) / 2, sayi_metni(yollar${sp}[i], 2), pos = 3,",
+            f'       col = "{REFERENCE_COLORS[0]}")',
+            f"  kutu(2, y_yol[i], yollar${s}[i])",
+            "  # yolun ortak olasılığı: dal olasılıklarının çarpımı",
+            f'  text(2.3, y_yol[i], paste("ortak", sayi_metni(yollar${fp}[i] * yollar${sp}[i], {op.decimals})),',
+            f'       pos = 4, col = "{PALETTE[1]}")',
+            "}",
+            "for (i in seq_along(ilk_dallar)) kutu(1, y_ilk[i], ilk_dallar[i])",
+            f'kutu(0, y_kok, "{_quote(op.root)}")',
+        ]
+
+    def _heatmap(self, op: HeatMap) -> list[str]:
+        x_label, y_label, title = _quote(op.x_label), _quote(op.y_label), _quote(op.title)
+        return [
+            f"cizim <- {self._chart_matrix(op.table)}",
+            "satir_sayisi <- nrow(cizim)",
+            "# image() ilk satırı en alta çizer; notlardaki gibi ilk satır üstte olsun diye satırlar ters çevrilir",
+            "ters <- t(cizim[satir_sayisi:1, , drop = FALSE])",
+            "# Sıfır açık tonda, en büyük değer ana renkte; sıfır hücreler de zeminden ayrılır",
+            f'renkler <- colorRampPalette(c("{HEAT_LOW}", "{PALETTE[0]}"))(100)',
+            "# Sütun adları ve eksen adı üstte (notlardaki tablo gibi), başlık onların üstünde: geniş üst kenar",
+            "eski_par <- par(mar = c(1, 5, 6.5, 1))",
+            "image(x = seq_len(ncol(cizim)), y = seq_len(satir_sayisi), z = ters, col = renkler,",
+            f'      zlim = c(0, max(cizim)), axes = FALSE, xlab = "", ylab = "{y_label}")',
+            'abline(v = seq_len(ncol(cizim) + 1) - 0.5, h = seq_len(satir_sayisi + 1) - 0.5, col = "white", lwd = 3)',
+            "axis(3, at = seq_len(ncol(cizim)), labels = colnames(cizim), tick = FALSE)",
+            f'mtext("{x_label}", side = 3, line = 2.5)',
+            f'title(main = "{title}", line = 4.5)',
+            "axis(2, at = seq_len(satir_sayisi), labels = rev(rownames(cizim)), las = 1, tick = FALSE)",
+            'metin_rengi <- ifelse(ters > 0.6 * max(cizim), "white", "black")',
+            "text(rep(seq_len(ncol(cizim)), times = satir_sayisi), rep(seq_len(satir_sayisi), each = ncol(cizim)),",
+            f"     sayi_metni(as.vector(ters), {op.decimals}), col = as.vector(metin_rengi))",
+            "par(eski_par)",
+        ]
+
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [
             f"# {op.comment}",
@@ -987,8 +1109,10 @@ class RGenerator(Generator):
             return target.name
         if isinstance(target, TableTarget):
             # Satır adı her zaman metin olarak verilir: tbl[7, ] yedinci satırı, tbl["7", ] adı 7 olan satırı seçer.
+            # Sütun adı da metin olarak verilir: sayı olan bir sütun adı (ör. 2) konumla seçilirdi.
             row = target.row if isinstance(target.row, str) else E.format_number(float(target.row))
-            return f"{target.table}[{text(row)}, {text(target.column)}]"
+            column = target.column if isinstance(target.column, str) else E.format_number(float(target.column))
+            return f"{target.table}[{text(row)}, {text(column)}]"
         if isinstance(target, CellTarget):
             return f"{target.frame}${target.column}[{target.row}]"
         raise TypeError(f"Tanınmayan hedef: {type(target).__name__}")

@@ -32,10 +32,14 @@ TOPICS: tuple[TopicMetadata, ...] = (
     ),
     TopicMetadata(
         "konu07", 7, "Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi", "Koşullu Olasılık, Bağımsızlık ve Bayes",
+        "Bir olayın gerçekleştiğini öğrendiğimizde diğer olayın olasılığı değişir mi ve gözlenen bir sonuçtan "
+        "kaynağına nasıl geri akıl yürütürüz?",
     ),
     TopicMetadata(
         "konu08", 8, "Rassal Değişkenler ve Kesikli Olasılık Dağılımları",
         "Rassal Değişkenler ve Kesikli Dağılımlar",
+        "Bir deneyin sayısal sonucunun olası değerlerine olasılıklar nasıl dağılır ve bu dağılımın merkezi, "
+        "yayılımı ve iki değişkenin birlikte hareketi nasıl ölçülür?",
     ),
     TopicMetadata("konu09", 9, "Binom, Poisson ve Hipergeometrik Dağılımlar", "Binom, Poisson ve Hipergeometrik"),
     TopicMetadata(

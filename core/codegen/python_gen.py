@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from core.codegen.base import (
+    HEAT_LOW,
     PALETTE,
     REFERENCE_COLORS,
     Generator,
@@ -34,18 +35,21 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    DrawDiscrete,
     Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
     Groups,
     GroupSummary,
+    HeatMap,
     Histogram,
     InlineData,
     JoinColumns,
     LineChart,
     MapCodes,
     MonteCarlo,
+    MosaicChart,
     NewSample,
     Operation,
     Outcomes,
@@ -63,6 +67,7 @@ from core.labs.spec import (
     StatTarget,
     StemLeaf,
     TableTarget,
+    TreeDiagram,
     VariableTypes,
 )
 from core.labs.tables import class_edges
@@ -157,7 +162,8 @@ def _needs_numpy(operations) -> bool:
     """numpy yalnız rastgele çekiliş, grup etiketi, histogram, yüzdelik, veriden sınıf sınırı veya ifade
     fonksiyonu varsa gerekir."""
 
-    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo, Percentile, BoxSummary, BoxPlot)
+    numpy_ops = (Groups, NewSample, Draw, DrawCategory, DrawDiscrete, Histogram, MonteCarlo, Percentile, BoxSummary,
+                 BoxPlot, TreeDiagram)
     for op in flatten(operations):
         if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
             return True
@@ -181,7 +187,9 @@ def _labelled_charts(operations) -> bool:
     """Değer etiketi yazan grafikler (Türkçe sayı yardımcısı gerekir)."""
 
     for op in flatten(operations):
-        if isinstance(op, (BarChart, CompareBarChart)) or (isinstance(op, GroupedBarChart) and op.labels):
+        if isinstance(op, (BarChart, CompareBarChart, MosaicChart, TreeDiagram, HeatMap)):
+            return True
+        if isinstance(op, GroupedBarChart) and op.labels:
             return True
         if isinstance(op, ClassHistogram) and op.labels:
             return True
@@ -214,6 +222,8 @@ class PythonGenerator(Generator):
         lines = standard + [""] if standard else []
         if uses_charts(operations):
             lines.append("import matplotlib.pyplot as plt")
+        if any(isinstance(op, HeatMap) for op in flat):
+            lines.append("from matplotlib.colors import LinearSegmentedColormap")
         if _needs_numpy(operations):
             lines.append("import numpy as np")
         lines.append("import pandas as pd")
@@ -324,6 +334,16 @@ class PythonGenerator(Generator):
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
         if isinstance(op, DrawCategory):
             return self._draw_category(op)
+        if isinstance(op, DrawDiscrete):
+            return [
+                f"# {op.comment}",
+                "# u ~ Tekdüze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
+                f"u = rng.random(len({op.frame}))",
+                f"{op.name}_degerler = np.array({_list(op.values)}, dtype=float)",
+                f"esik = np.cumsum({_list(op.probabilities)})",
+                "esik[-1] = 1.0  # yuvarlama hatasına karşı son eşik tam 1",
+                f'{op.frame}["{op.name}"] = {op.name}_degerler[np.searchsorted(esik, u, side="right")]',
+            ]
         if isinstance(op, Shape):
             columns = f".drop(columns={_list(op.exclude)})" if op.exclude else ""
             note = "  # kimlik sütunu değişken sayılmaz" if op.exclude else ""
@@ -423,6 +443,12 @@ class PythonGenerator(Generator):
             return self._box_plot(op)
         if isinstance(op, Histogram):
             return self._histogram(op)
+        if isinstance(op, MosaicChart):
+            return self._mosaic(op)
+        if isinstance(op, TreeDiagram):
+            return self._tree(op)
+        if isinstance(op, HeatMap):
+            return self._heatmap(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"Python üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -706,6 +732,7 @@ class PythonGenerator(Generator):
                 f'ax.bar_label(cubuklar, labels=[sayi_metni(v, {op.decimals}{percent}) for v in cizim["{op.y}"]], '
                 "padding=2)"
             )
+            lines.append("ax.margins(y=0.1)  # en yüksek dikdörtgenin etiketi için üstte boşluk")
         return lines + self._axes(op.x_label, op.y_label, op.title)
 
     def _dot_plot(self, op: DotPlot) -> list[str]:
@@ -778,6 +805,11 @@ class PythonGenerator(Generator):
     def _bar(self, op: BarChart) -> list[str]:
         if op.x is None:
             lines = [f'cizim = {self._chart_table(op.source)}["{op.y}"]']
+        elif (op.source, op.x) in self.numeric_columns:
+            lines = [
+                "# Sayısal değerler kategori etiketi olarak: her değer bir sütun, eksende yalnız bu değerler yazılır",
+                f'cizim = pd.Series({op.source}["{op.y}"].to_numpy(), index={op.source}["{op.x}"].astype(str))',
+            ]
         else:
             lines = [f'cizim = pd.Series({op.source}["{op.y}"].to_numpy(), index={op.source}["{op.x}"])']
         if op.sort == "azalan":
@@ -792,6 +824,8 @@ class PythonGenerator(Generator):
             ]
             if op.y_range is not None:
                 lines.append(f"ax.set_xlim({E.format_number(op.y_range[0])}, {E.format_number(op.y_range[1])})")
+            else:
+                lines.append("ax.margins(x=0.1)  # en uzun sütunun etiketi için sağda boşluk")
             return lines + self._axes(op.y_label, op.x_label, op.title)
         lines += [
             f'cubuklar = ax.bar(cizim.index, cizim.values, color="{PALETTE[0]}")',
@@ -799,6 +833,8 @@ class PythonGenerator(Generator):
         ]
         if op.y_range is not None:
             lines.append(f"ax.set_ylim({E.format_number(op.y_range[0])}, {E.format_number(op.y_range[1])})")
+        else:
+            lines.append("ax.margins(y=0.1)  # en yüksek sütunun etiketi için üstte boşluk")
         return lines + self._axes(op.x_label, op.y_label, op.title)
 
     def _grouped(self, op: GroupedBarChart) -> list[str]:
@@ -810,6 +846,8 @@ class PythonGenerator(Generator):
             "for kap in ax.containers:",
             f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues]{position})",
         ] if op.labels else []
+        if op.labels and not op.stacked:
+            labels.append("ax.margins(y=0.1)  # en yüksek sütunun etiketi için üstte boşluk")
         return [
             f"cizim = {frame}  # satırlar yatay eksende, sütunlar seriler",
             f"renkler = {_list(PALETTE)}[: cizim.shape[1]]",
@@ -831,6 +869,7 @@ class PythonGenerator(Generator):
             "cizim.plot.bar(ax=ax, rot=0, color=renkler)",
             "for kap in ax.containers:",
             f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues], padding=2)",
+            "ax.margins(y=0.1)  # en yüksek sütunun etiketi için üstte boşluk",
             *self._axes(op.x_label, op.y_label, op.title, legend=True),
         ]
 
@@ -868,6 +907,88 @@ class PythonGenerator(Generator):
                 f'ax.axvline({position}, color="{color}", linestyle="--", linewidth=2, label={text(label)})'
             )
         return lines + self._axes(op.x_label, op.y_label, op.title, legend=True)
+
+    def _mosaic(self, op: MosaicChart) -> list[str]:
+        return [
+            f"cizim = {self._chart_table(op.table)}  # hücreler: sayılar ya da ortak olasılıklar",
+            "genislik = cizim.sum(axis=1) / cizim.to_numpy().sum()  # sütun genişliği: satırın marjinal payı",
+            "pay = cizim.div(cizim.sum(axis=1), axis=0)  # sütun içindeki pay: satır verildiğinde koşullu olasılık",
+            "sol = genislik.cumsum() - genislik  # sütunların sol kenarı",
+            f"renkler = {_list(PALETTE)}[: cizim.shape[1]]",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            "taban = pd.Series(0.0, index=cizim.index)",
+            "for renk, sutun in reversed(list(zip(renkler, cizim.columns))):  # ilk sütun en üstte",
+            '    ax.bar(sol, pay[sutun], width=genislik, bottom=taban, align="edge", color=renk,',
+            '           edgecolor="white", linewidth=2)',
+            "    for satir in cizim.index:  # parçanın alanı = ortak olasılık",
+            "        alan = genislik[satir] * pay.loc[satir, sutun]",
+            "        ax.text(sol[satir] + genislik[satir] / 2, taban[satir] + pay.loc[satir, sutun] / 2,",
+            f'                f"{{sutun}}\\n{{sayi_metni(alan, {op.decimals})}}", ha="center", va="center",',
+            '                color="white")',
+            "    taban = taban + pay[sutun]",
+            "ax.set_xticks(sol + genislik / 2, cizim.index)",
+            "ax.set_xlim(0, 1)",
+            "ax.set_ylim(0, 1)",
+            *self._axes(op.x_label, op.y_label, op.title),
+        ]
+
+    def _tree(self, op: TreeDiagram) -> list[str]:
+        columns = _list((op.first, op.second, op.first_p, op.second_p))
+        return [
+            "# Olasılık ağacı (soldan sağa): her satır bir yol, ilk yol en üstte",
+            f"yollar = {op.frame}[{columns}]",
+            "y_yol = np.arange(len(yollar))[::-1]",
+            f'ilk_dallar = list(dict.fromkeys(yollar["{op.first}"]))',
+            f'y_ilk = {{dal: y_yol[(yollar["{op.first}"] == dal).to_numpy()].mean() for dal in ilk_dallar}}',
+            "y_kok = np.mean(list(y_ilk.values()))  # kök, ilk dalların ortasında",
+            f'kutu = {{"boxstyle": "round", "facecolor": "white", "edgecolor": "{PALETTE[0]}"}}',
+            'etiket = {"textcoords": "offset points", "xytext": (0, 5), "ha": "center",',
+            f'          "color": "{REFERENCE_COLORS[0]}"}}',
+            "fig, ax = plt.subplots(figsize=(8, 1.4 + 0.8 * len(yollar)))",
+            "for dal in ilk_dallar:",
+            f'    p = yollar.loc[yollar["{op.first}"] == dal, "{op.first_p}"].iloc[0]',
+            f'    ax.plot([0, 1], [y_kok, y_ilk[dal]], color="{PALETTE[0]}")',
+            "    ax.annotate(sayi_metni(p, 2), (0.5, (y_kok + y_ilk[dal]) / 2), **etiket)",
+            '    ax.text(1, y_ilk[dal], dal, ha="center", va="center", bbox=kutu)',
+            "for i, (dal, sonuc, p_ilk, p_ikinci) in enumerate(yollar.itertuples(index=False)):",
+            f'    ax.plot([1, 2], [y_ilk[dal], y_yol[i]], color="{PALETTE[0]}")',
+            "    ax.annotate(sayi_metni(p_ikinci, 2), (1.5, (y_ilk[dal] + y_yol[i]) / 2), **etiket)",
+            '    ax.text(2, y_yol[i], sonuc, ha="center", va="center", bbox=kutu)',
+            f'    ax.text(2.3, y_yol[i], f"ortak {{sayi_metni(p_ilk * p_ikinci, {op.decimals})}}", va="center",',
+            f'            color="{PALETTE[1]}")  # yolun ortak olasılığı: dal olasılıklarının çarpımı',
+            f'ax.text(0, y_kok, "{_quote(op.root)}", ha="center", va="center", bbox=kutu)',
+            "ax.set_xlim(-0.3, 3.0)",
+            "ax.set_ylim(-0.6, len(yollar) - 0.4)",
+            'ax.axis("off")  # ağaçta eksen yoktur',
+            f'ax.set_title("{_quote(op.title)}")',
+            "plt.tight_layout()",
+            "plt.show()",
+        ]
+
+    def _heatmap(self, op: HeatMap) -> list[str]:
+        return [
+            f"cizim = {self._chart_table(op.table)}",
+            "degerler = cizim.to_numpy(dtype=float)",
+            "# Sıfır açık tonda, en büyük değer ana renkte; sıfır hücreler de zeminden ayrılır",
+            f'renk_skalasi = LinearSegmentedColormap.from_list("isi", ["{HEAT_LOW}", "{PALETTE[0]}"])',
+            "fig, ax = plt.subplots(figsize=(7, 5))",
+            "ax.imshow(degerler, cmap=renk_skalasi, vmin=0, vmax=degerler.max())  # ilk satır en üstte",
+            "ax.set_xticks([j - 0.5 for j in range(degerler.shape[1] + 1)], minor=True)",
+            "ax.set_yticks([i - 0.5 for i in range(degerler.shape[0] + 1)], minor=True)",
+            'ax.grid(which="minor", color="white", linewidth=3)  # hücre sınırları',
+            'ax.tick_params(which="both", length=0)',
+            "for kenar in ax.spines.values():",
+            "    kenar.set_visible(False)",
+            "for i in range(degerler.shape[0]):",
+            "    for j in range(degerler.shape[1]):",
+            '        renk = "white" if degerler[i, j] > 0.6 * degerler.max() else "black"',
+            f'        ax.text(j, i, sayi_metni(degerler[i, j], {op.decimals}), ha="center", va="center", color=renk)',
+            "ax.set_xticks(range(degerler.shape[1]), cizim.columns)",
+            "ax.set_yticks(range(degerler.shape[0]), cizim.index)",
+            "ax.xaxis.tick_top()",
+            'ax.xaxis.set_label_position("top")',
+            *self._axes(op.x_label, op.y_label, op.title),
+        ]
 
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [

@@ -13,12 +13,16 @@ from core.labs.spec import (
     ClassTable,
     CrossTab,
     Derive,
+    Draw,
+    DrawDiscrete,
+    Event,
     FrequencyTable,
     FromCounts,
     InlineData,
     JoinColumns,
     LabSpec,
     LabStep,
+    MapCodes,
     MonteCarlo,
     NewSample,
     Operation,
@@ -36,6 +40,8 @@ PALETTE = ("#107C89", "#B3392F", "#2F9E6B", "#C98A1B", "#6B4C9A", "#07373D")
 """Grafik serilerinin renkleri; uygulamada ve iki dilde aynı sırayla kullanılır."""
 REFERENCE_COLORS = ("#07373D", "#6B4C9A", "#C98A1B")
 """Dikey başvuru çizgilerinin renkleri (ör. ortalama, medyan, çeyrekler)."""
+HEAT_LOW = "#E7F2F3"
+"""Isı haritasında sıfırın rengi: ana rengin açık tonu. Sıfır hücreler de beyaz zeminden ayrılır (notlardaki gibi)."""
 
 
 @dataclass(frozen=True)
@@ -86,6 +92,47 @@ def functions_used(operations) -> set[str]:
 
 def uses_charts(operations) -> bool:
     return any(isinstance(op, CHARTS) for op in flatten(operations))
+
+
+def _numbers(values) -> bool:
+    return all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values)
+
+
+def numeric_columns(spec: LabSpec) -> set[tuple[str, str]]:
+    """Sayısal değerli veri çerçevesi sütunları (veri çerçevesi, sütun).
+
+    Satır içi veride bütün değerleri sayı olan sütunlar (ör. kesikli rassal değişkenin değerleri x = 0, 1, 2, …) ile
+    türetilen, olay göstergesi ve sayısal çekiliş sütunları. Sütun grafiğinde bu değerler kategori etiketi olarak
+    yazılır: matplotlib sayısal konumlara çizip ara değerlere (0,5, 1,5, …) eksen işareti koyardı.
+    """
+
+    found: set[tuple[str, str]] = set()
+    for step in spec.steps:
+        for op in flatten(step.operations):
+            if isinstance(op, (InlineData, FromCounts)):
+                for position, column in enumerate(op.columns):
+                    if _numbers(row[position] for row in op.rows):
+                        found.add((op.frame, column))
+            elif isinstance(op, Outcomes):
+                found |= {(op.frame, column) for column, values in op.stages if _numbers(values)}
+            elif isinstance(op, (Derive, Event, Draw, DrawDiscrete, MapCodes)):
+                found.add((op.frame, op.name))
+    return found
+
+
+def signed_columns(spec: LabSpec) -> set[tuple[str, str]]:
+    """Satır içi veride negatif değer içeren sütunlar (ör. geçersiz bir olasılık tablosu): sütun grafiğinde bu
+    değerlerin etiketi sütunun altına yazılır."""
+
+    found: set[tuple[str, str]] = set()
+    for step in spec.steps:
+        for op in flatten(step.operations):
+            if isinstance(op, InlineData):
+                for position, column in enumerate(op.columns):
+                    values = [row[position] for row in op.rows]
+                    if _numbers(values) and min(values) < 0:
+                        found.add((op.frame, column))
+    return found
 
 
 def totals_of(spec: LabSpec) -> dict[str, tuple[bool, bool]]:
@@ -152,6 +199,8 @@ class Generator:
         self.spec = spec
         self.has_checks = any(step.checks for step in spec.steps)
         self.totals = totals_of(spec)
+        self.numeric_columns = numeric_columns(spec)
+        self.signed_columns = signed_columns(spec)
         self.quiet = False
         """Monte Carlo döngüsü içinde ekrana yazdırma satırları üretilmez."""
         self.scalar_refs = {

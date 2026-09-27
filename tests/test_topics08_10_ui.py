@@ -1,7 +1,6 @@
 from streamlit.testing.v1 import AppTest
 
 TOPIC_KEYS = [
-    "konu08",
     "konu09",
     "konu10",
 ]
@@ -14,19 +13,13 @@ def _open_topic(key: str) -> AppTest:
     return at
 
 
-def test_topic08_renders_without_exception():
-    at = _open_topic(TOPIC_KEYS[0])
-    assert not at.exception
-    assert any("Rassal Değişkenler" in title.value for title in at.title)
-
-
 def test_topic09_renders_without_exception():
-    at = _open_topic(TOPIC_KEYS[1])
+    at = _open_topic(TOPIC_KEYS[0])
     assert not at.exception
     assert any("Binom" in title.value for title in at.title)
 
 
 def test_topic10_renders_without_exception():
-    at = _open_topic(TOPIC_KEYS[2])
+    at = _open_topic(TOPIC_KEYS[1])
     assert not at.exception
     assert any("Sürekli Rassal Değişkenler" in title.value for title in at.title)

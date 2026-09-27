@@ -22,8 +22,8 @@ Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç 
 | 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı | 10 | 32 | 3 | 24 |
 | 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı | 12 | 40 | 3 | 24 |
 | 06 | Olasılığın Temelleri | Yeni yapı | 9 | 35 | 3 | 24 |
-| 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Eski yapı | — | — | — | — |
-| 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Eski yapı | — | — | — | — |
+| 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı | 10 | 61 | 3 | 24 |
+| 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı | 12 | 65 | 3 | 24 |
 | 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Eski yapı | — | — | — | — |
 | 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Eski yapı | — | — | — | — |
 | 11 | Normal Olasılıklar ve Üstel Dağılım | Eski yapı | — | — | — | — |

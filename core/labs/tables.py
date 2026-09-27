@@ -278,3 +278,34 @@ def draw_categories(frame: pd.DataFrame, u: np.ndarray, categories: Sequence[str
     if any(value is None for value in result):
         raise ValueError("Bazı gözlemler için olasılık tanımlanmamış.")
     return result
+
+
+def draw_discrete(u: np.ndarray, values: Sequence[float], probabilities: Sequence[float]) -> np.ndarray:
+    """Ters dağılım fonksiyonu: X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (``np.searchsorted``, sağ)."""
+
+    if len(values) != len(probabilities):
+        raise ValueError("Her değer için bir olasılık gerekir.")
+    return np.asarray(values, dtype=float)[np.searchsorted(thresholds(probabilities), u, side="right")]
+
+
+def tree_layout(frame: pd.DataFrame, first: str, second: str, first_p: str, second_p: str) -> pd.DataFrame:
+    """İki aşamalı olasılık ağacının yolları ve çizim konumları (soldan sağa: kök 0, ilk aşama 1, yollar 2).
+
+    Her satır bir tam yoldur; ilk yol en üstte (``y_yol = n − 1, …, 0``). İlk aşamadaki bir dal, kendi yollarının
+    ortasında durur (``y_ilk``). ``ortak`` yolun ortak olasılığıdır: ilk dalın olasılığı × ikinci dalın koşullu
+    olasılığı. Üretilen koddaki ağaç çizimiyle aynı kural.
+    """
+
+    paths = pd.DataFrame({
+        "ilk": frame[first].astype(str).to_numpy(),
+        "ikinci": frame[second].astype(str).to_numpy(),
+        "p_ilk": frame[first_p].to_numpy(dtype=float),
+        "p_ikinci": frame[second_p].to_numpy(dtype=float),
+    })
+    for name, group in paths.groupby("ilk", sort=False):
+        if group["p_ilk"].nunique() != 1:
+            raise ValueError(f"'{name}' dalının olasılığı her yolda aynı olmalıdır.")
+    paths["ortak"] = paths["p_ilk"] * paths["p_ikinci"]
+    paths["y_yol"] = np.arange(len(paths))[::-1].astype(float)
+    paths["y_ilk"] = paths.groupby("ilk", sort=False)["y_yol"].transform("mean")
+    return paths

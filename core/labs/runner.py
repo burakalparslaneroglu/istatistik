@@ -30,12 +30,14 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    DrawDiscrete,
     Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
     Groups,
     GroupSummary,
+    HeatMap,
     Histogram,
     InlineData,
     JoinColumns,
@@ -43,6 +45,7 @@ from core.labs.spec import (
     LineChart,
     MapCodes,
     MonteCarlo,
+    MosaicChart,
     NewSample,
     Operation,
     Outcomes,
@@ -60,6 +63,7 @@ from core.labs.spec import (
     StatTarget,
     StemLeaf,
     TableTarget,
+    TreeDiagram,
     VariableTypes,
 )
 
@@ -170,9 +174,11 @@ def _bar_data(op: BarChart, state: LabState) -> pd.DataFrame:
         data = pd.DataFrame({"kategori": table.index.astype(str), "deger": table[op.y].to_numpy(dtype=float)})
     else:
         frame = state.frames[op.source]
-        data = pd.DataFrame(
-            {"kategori": frame[op.x].astype(str).to_numpy(), "deger": frame[op.y].to_numpy(dtype=float)}
-        )
+        categories = frame[op.x]
+        # Sayısal değerler (ör. x = 0, 1, 2) kategori etiketi olur; ondalıksız değerde ".0" yazılmaz.
+        labels = (categories.map(E.format_number) if pd.api.types.is_numeric_dtype(categories)
+                  else categories.astype(str))
+        data = pd.DataFrame({"kategori": labels.to_numpy(), "deger": frame[op.y].to_numpy(dtype=float)})
     if op.sort == "azalan":
         data = data.sort_values("deger", ascending=False, kind="stable")
     elif op.sort is not None:
@@ -238,6 +244,10 @@ def execute(op: Operation, state: LabState) -> None:
         frame = state.frames[op.frame]
         u = state.rng.random(len(frame))
         frame[op.name] = T.draw_categories(frame, u, op.categories, op.probabilities, op.by)
+    elif isinstance(op, DrawDiscrete):
+        frame = state.frames[op.frame]
+        u = state.rng.random(len(frame))
+        frame[op.name] = T.draw_discrete(u, op.values, op.probabilities)
     elif isinstance(op, Shape):
         frame = state.frames[op.frame]
         state.scalars[op.observations] = float(len(frame))
@@ -339,6 +349,10 @@ def execute(op: Operation, state: LabState) -> None:
             "deger": values.to_numpy(dtype=float),
             "yigin": values.groupby(values).cumcount().to_numpy() + 1,
         })
+    elif isinstance(op, (MosaicChart, HeatMap)):
+        state.plots[plot_key(op)] = without_total(state.tables[op.table]).astype(float)
+    elif isinstance(op, TreeDiagram):
+        state.plots[plot_key(op)] = T.tree_layout(state.frames[op.frame], op.first, op.second, op.first_p, op.second_p)
     elif isinstance(op, MonteCarlo):
         _monte_carlo(op, state)
     else:

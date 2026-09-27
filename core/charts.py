@@ -11,27 +11,28 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from core.codegen.base import PALETTE, REFERENCE_COLORS
+from core.codegen.base import HEAT_LOW, PALETTE, REFERENCE_COLORS
 from core.labs.runner import LabState, plot_key
 from core.labs.spec import (
+    CHARTS,
     BarChart,
     BoxPlot,
     ClassHistogram,
     CompareBarChart,
     DotPlot,
     GroupedBarChart,
+    HeatMap,
     Histogram,
     LineChart,
+    MosaicChart,
     Operation,
     PieChart,
     ScatterPlot,
+    TreeDiagram,
 )
 from core.labs.tables import boundary_label
 
-CHART_TYPES = (
-    BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
-    DotPlot,
-)
+CHART_TYPES = CHARTS
 
 
 def tr_number(value: float, decimals: int = 0, percent: bool = False) -> str:
@@ -56,11 +57,18 @@ def style_figure(figure: go.Figure, *, title: str, x_title: str, y_title: str, l
     return figure
 
 
-def show_figure(figure: go.Figure, *, key: str | None = None) -> None:
-    """Grafiği gösterir; eksen adı olmayan (pasta dışındaki) grafik hatadır."""
+def _has_axes(figure: go.Figure) -> bool:
+    """Pasta grafiğinde ve eksenleri gizlenmiş grafiklerde (olasılık ağacı) eksen yoktur."""
 
-    has_axes = not any(isinstance(trace, go.Pie) for trace in figure.data)
-    if has_axes:
+    if any(isinstance(trace, go.Pie) for trace in figure.data):
+        return False
+    return figure.layout.xaxis.visible is not False or figure.layout.yaxis.visible is not False
+
+
+def show_figure(figure: go.Figure, *, key: str | None = None) -> None:
+    """Grafiği gösterir; eksenli bir grafikte eksen adı yoksa hatadır (pasta ve ağaçta eksen yoktur)."""
+
+    if _has_axes(figure):
         x_title = figure.layout.xaxis.title.text or ""
         y_title = figure.layout.yaxis.title.text or ""
         if not x_title.strip() or not y_title.strip():
@@ -294,6 +302,96 @@ def _dot_plot(op: DotPlot, data: pd.DataFrame, state: LabState) -> go.Figure:
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
+def _mosaic(op: MosaicChart, data: pd.DataFrame) -> go.Figure:
+    """Sütun genişliği satırın marjinal payı, parça yüksekliği satır içindeki pay; parça alanı ortak olasılık."""
+
+    values = data.to_numpy(dtype=float)
+    widths = values.sum(axis=1) / values.sum()
+    shares = values / values.sum(axis=1, keepdims=True)
+    lefts = np.cumsum(widths) - widths
+    centers = lefts + widths / 2
+    rows = [str(item) for item in data.index]
+    figure = go.Figure()
+    bottom = np.zeros(len(rows))
+    for index, column in reversed(list(enumerate(data.columns))):  # ilk sütun en üstte (notlardaki gibi)
+        area = widths * shares[:, index]
+        figure.add_trace(
+            go.Bar(
+                x=centers, y=shares[:, index], width=widths, base=bottom, name=str(column),
+                marker={"color": PALETTE[index % len(PALETTE)], "line": {"color": "white", "width": 2}},
+                text=[f"{column}<br>{tr_number(value, op.decimals)}" for value in area],
+                textposition="inside", insidetextanchor="middle", textfont={"color": "white"},
+                customdata=np.column_stack([rows, [tr_number(v, op.decimals) for v in area],
+                                            [tr_number(v, op.decimals) for v in shares[:, index]]]),
+                hovertemplate=(f"%{{customdata[0]}} ∩ {column}<br>alan (ortak olasılık): %{{customdata[1]}}"
+                               "<br>sütun içindeki pay: %{customdata[2]}<extra></extra>"),
+            )
+        )
+        bottom = bottom + shares[:, index]
+    figure.update_layout(barmode="overlay", showlegend=False, bargap=0)
+    figure.update_xaxes(range=[0, 1], tickvals=centers, ticktext=rows, showgrid=False)
+    figure.update_yaxes(range=[0, 1], showgrid=False)
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _heatmap(op: HeatMap, data: pd.DataFrame) -> go.Figure:
+    """Beyazdan uygulamanın ana rengine koyulaşan hücreler; ilk satır en üstte (notlardaki tablo gibi)."""
+
+    values = data.to_numpy(dtype=float)
+    figure = go.Figure(
+        go.Heatmap(
+            z=values, x=[str(item) for item in data.columns], y=[str(item) for item in data.index],
+            colorscale=[[0.0, HEAT_LOW], [1.0, PALETTE[0]]], zmin=0, zmax=float(values.max()), showscale=False,
+            xgap=3, ygap=3, text=[[tr_number(value, op.decimals) for value in row] for row in values],
+            texttemplate="%{text}", textfont={"size": 16},
+            hovertemplate=f"{op.y_label}: %{{y}}<br>{op.x_label}: %{{x}}<br>değer: %{{text}}<extra></extra>",
+        )
+    )
+    figure.update_xaxes(type="category", side="top", showgrid=False)
+    figure.update_yaxes(type="category", autorange="reversed", showgrid=False)
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _tree(op: TreeDiagram, data: pd.DataFrame) -> go.Figure:
+    """Soldan sağa olasılık ağacı: dallarda (koşullu) olasılıklar, yol sonunda ortak olasılık."""
+
+    firsts = data.drop_duplicates("ilk")
+    root_y = float(firsts["y_ilk"].mean())
+    figure = go.Figure()
+    edges_x: list[float | None] = []
+    edges_y: list[float | None] = []
+    annotations = []
+
+    def box(x: float, y: float, text: str) -> dict:
+        return {"x": x, "y": y, "text": text, "showarrow": False, "bgcolor": "white", "bordercolor": PALETTE[0],
+                "borderwidth": 1.5, "borderpad": 4, "font": {"size": 14}}
+
+    def edge_label(x0: float, y0: float, x1: float, y1: float, value: float) -> dict:
+        return {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2, "text": tr_number(value, 2), "showarrow": False,
+                "yshift": 11, "font": {"size": 13, "color": REFERENCE_COLORS[0]}}
+
+    for _, row in firsts.iterrows():
+        edges_x += [0, 1, None]
+        edges_y += [root_y, row["y_ilk"], None]
+        annotations += [edge_label(0, root_y, 1, row["y_ilk"], row["p_ilk"]), box(1, row["y_ilk"], row["ilk"])]
+    for _, row in data.iterrows():
+        edges_x += [1, 2, None]
+        edges_y += [row["y_ilk"], row["y_yol"], None]
+        annotations += [
+            edge_label(1, row["y_ilk"], 2, row["y_yol"], row["p_ikinci"]),
+            box(2, row["y_yol"], row["ikinci"]),
+            {"x": 2.62, "y": row["y_yol"], "text": f"ortak {tr_number(row['ortak'], op.decimals)}",
+             "showarrow": False, "font": {"size": 13, "color": PALETTE[1]}},
+        ]
+    annotations.append(box(0, root_y, op.root))
+    figure.add_trace(go.Scatter(x=edges_x, y=edges_y, mode="lines", line={"color": PALETTE[0], "width": 2},
+                                hoverinfo="skip", showlegend=False))
+    figure.update_layout(annotations=annotations, height=140 + 70 * len(data))
+    figure.update_xaxes(visible=False, range=[-0.35, 3.05])
+    figure.update_yaxes(visible=False, range=[-0.6, len(data) - 0.4])
+    return style_figure(figure, title=op.title, x_title="", y_title="")
+
+
 def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Figure:
     """Bir grafik işleminin Plotly karşılığı; ``label`` seri başlıkları için Türkçe ad verir."""
 
@@ -323,4 +421,10 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
         return _class_histogram(op, data)
     if isinstance(op, DotPlot):
         return _dot_plot(op, data, state)
+    if isinstance(op, MosaicChart):
+        return _mosaic(op, data)
+    if isinstance(op, HeatMap):
+        return _heatmap(op, data)
+    if isinstance(op, TreeDiagram):
+        return _tree(op, data)
     raise TypeError(f"Grafik türü tanınmıyor: {type(op).__name__}")
