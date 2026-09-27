@@ -20,6 +20,7 @@ from core.labs.runner import LabRun, LabState, run_lab, run_operations
 from core.labs.spec import (
     REPRO_DESCRIPTIONS,
     TOTAL,
+    BoxSummary,
     ClassTable,
     Count,
     CrossTab,
@@ -27,14 +28,19 @@ from core.labs.spec import (
     FromCounts,
     GroupSummary,
     InlineData,
+    JoinColumns,
     LabSpec,
     LabStep,
     MapCodes,
+    Outcomes,
+    PairStatistic,
     Percentile,
     PieChart,
     Scalar,
     ScalarTable,
+    Selections,
     Shape,
+    ShowFrame,
     Statistic,
     StemLeaf,
     VariableTypes,
@@ -55,7 +61,21 @@ _COLUMN_LABELS = {
     "kumulatif_yuzde": "Kümülatif yüzde",
     "yapraklar": "Yapraklar",
     "yaprak_sayisi": "Yaprak sayısı",
+    "nicelik": "Büyüklük",
     TOTAL: TOTAL,
+}
+_BOX_LABELS = {
+    "en_kucuk": "En küçük değer",
+    "q1": "Q₁ (birinci çeyrek)",
+    "medyan": "Medyan",
+    "q3": "Q₃ (üçüncü çeyrek)",
+    "en_buyuk": "En büyük değer",
+    "iqr": "IQR = Q₃ − Q₁",
+    "alt_sinir": "Alt sınır Q₁ − 1,5·IQR",
+    "ust_sinir": "Üst sınır Q₃ + 1,5·IQR",
+    "alt_biyik": "Sol bıyık ucu",
+    "ust_biyik": "Sağ bıyık ucu",
+    "aykiri_sayisi": "Aykırı değer sayısı",
 }
 
 
@@ -96,7 +116,10 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
         formats = {"frekans": _count, "goreli": lambda v: tr_number(v, 3), "yuzde": lambda v: tr_number(v, 1, True)}
         return _formatted(table, formats, label(op.variable), label)
     if isinstance(op, CrossTab):
-        if op.percent is None:
+        if op.weights is not None:
+            def formatter(value: float) -> str:
+                return tr_number(value, op.decimals)
+        elif op.percent is None:
             formatter = _count
         else:
             def formatter(value: float) -> str:
@@ -122,6 +145,14 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
     if isinstance(op, GroupSummary):
         formats = {name: (lambda v: tr_number(v, 3)) for name, _, _ in op.columns}
         return _formatted(table, formats, label(op.by), label)
+    if isinstance(op, JoinColumns):
+        formats = {name: (lambda v: tr_number(v, op.decimals, op.percent)) for name, _, _ in op.columns}
+        index = str(table.index.name or "")
+        return _formatted(table, formats, _COLUMN_LABELS.get(index, label(index)) or "Kategori", label)
+    if isinstance(op, BoxSummary):
+        shown = table.rename(index=_BOX_LABELS)
+        formats = {str(column): _boundary for column in shown.columns}
+        return _formatted(shown, formats, "Özet", label)
     if isinstance(op, VariableTypes):
         shown = table.reset_index()
         shown.insert(0, "Değişken", [label(name) for name in shown["degisken"]])
@@ -133,11 +164,15 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
 def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: name) -> str:
     """Çapraz tablonun ne gösterdiği: sayılar mı, hangi paydayla yüzdeler mi, hangi alt grupta mı."""
 
-    kind = {
-        None: "**Çapraz tablo: sayılar**",
-        "satir": "**Satır yüzdeleri** (payda: satır toplamı)",
-        "sutun": "**Sütun yüzdeleri** (payda: sütun toplamı)",
-    }[op.percent]
+    if op.weights is not None:
+        kind = (f"**Çapraz tablo — toplanan sütun: {label(op.weights)}** (her hücre, o hücreye düşen satırlardaki "
+                "değerlerin toplamıdır)")
+    else:
+        kind = {
+            None: "**Çapraz tablo: sayılar**",
+            "satir": "**Satır yüzdeleri** (payda: satır toplamı)",
+            "sutun": "**Sütun yüzdeleri** (payda: sütun toplamı)",
+        }[op.percent]
     if op.where is not None:
         column, value = op.where
         kind += f" · yalnız {label(column).lower()}: {value}"
@@ -217,7 +252,7 @@ def _render_navigation(spec: LabSpec) -> LabStep:
 
 # --- Sonuçlar ----------------------------------------------------------------------
 
-_METRICS = (Shape, Count, Statistic, Scalar, Percentile)
+_METRICS = (Shape, Count, Statistic, PairStatistic, Scalar, Percentile)
 _SUBSCRIPTS = str.maketrans("0123456789,", "₀₁₂₃₄₅₆₇₈₉,")
 
 
@@ -234,7 +269,7 @@ def _metrics(op, state: LabState) -> list[tuple[str, str]]:
                 ("Değişken sayısı", _count(state.scalars[op.variables]))]
     if isinstance(op, Count):
         return [(op.comment, _count(state.scalars[op.name]))]
-    if isinstance(op, Statistic):
+    if isinstance(op, (Statistic, PairStatistic)):
         return [(op.comment, tr_number(state.scalars[op.name], op.decimals))]
     return [(op.comment, tr_number(state.scalars[op.name], op.decimals, op.percent))]
 
@@ -272,6 +307,15 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             st.markdown(f"**{op.comment}**")
             show_table(_frame(counts, label))
             st.caption(f"Her satır sayısı kadar tekrarlanır: toplam {_count(len(state.frames[op.frame]))} gözlem.")
+        elif isinstance(op, (Outcomes, Selections)):
+            frame = state.frames[op.frame]
+            st.markdown(f"**{op.comment}**")
+            show_table(_frame(frame, label))
+            noun = "Sonuç" if isinstance(op, Outcomes) else "Seçim"
+            st.caption(f"{noun} sayısı: {_count(len(frame))}.")
+        elif isinstance(op, ShowFrame):
+            st.markdown(f"**{op.comment}**")
+            show_table(_frame(state.frames[op.frame][list(op.columns)], label))
         elif isinstance(op, MapCodes):
             frame = state.frames[op.frame][[op.source, op.name]].head(8)
             st.markdown(f"**{op.comment}**")
@@ -279,7 +323,8 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
         elif isinstance(op, CrossTab):
             st.markdown(crosstab_caption(op, label))
             show_table(display_table(op, state.tables[op.result], label))
-        elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf)):
+        elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf,
+                             JoinColumns, BoxSummary)):
             show_table(display_table(op, state.tables[op.result], label))
         if isinstance(op, PieChart):
             show_figure(figure_for(op, state, label), key=f"{key_prefix}_grafik_{index}")

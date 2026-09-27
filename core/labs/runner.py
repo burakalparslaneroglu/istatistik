@@ -17,6 +17,8 @@ from core.labs import tables as T
 from core.labs.spec import (
     TOTAL,
     BarChart,
+    BoxPlot,
+    BoxSummary,
     CellTarget,
     Check,
     ClassHistogram,
@@ -28,6 +30,7 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
@@ -35,18 +38,24 @@ from core.labs.spec import (
     GroupSummary,
     Histogram,
     InlineData,
+    JoinColumns,
     LabSpec,
     LineChart,
     MapCodes,
     MonteCarlo,
     NewSample,
     Operation,
+    Outcomes,
+    PairStatistic,
     Percentile,
     PieChart,
     Scalar,
     ScalarTable,
     ScalarTarget,
+    ScatterPlot,
+    Selections,
     Shape,
+    ShowFrame,
     Statistic,
     StatTarget,
     StemLeaf,
@@ -125,6 +134,12 @@ def statistic(series: pd.Series, stat: str) -> float:
         return float(series.min())
     if stat == "max":
         return float(series.max())
+    if stat == "var":
+        return float(series.var())  # payda n − 1 (pandas varsayılanı ddof=1)
+    if stat == "std":
+        return float(series.std())
+    if stat == "nunique":
+        return float(series.nunique())
     if stat == "value":
         if len(series) != 1:
             raise ValueError(f"Tek değer beklenirken {len(series)} gözlem bulundu.")
@@ -172,6 +187,10 @@ def execute(op: Operation, state: LabState) -> None:
         state.frames[op.frame] = T.inline_frame(op.columns, op.rows)
     elif isinstance(op, FromCounts):
         state.frames[op.frame] = T.from_counts(op.columns, op.rows)
+    elif isinstance(op, Outcomes):
+        state.frames[op.frame] = T.outcomes(op.stages)
+    elif isinstance(op, Selections):
+        state.frames[op.frame] = T.selections(op.items, op.k, op.ordered, op.columns)
     elif isinstance(op, VariableTypes):
         frame = state.frames[op.frame]
         rows = []
@@ -179,6 +198,13 @@ def execute(op: Operation, state: LabState) -> None:
             stored = "sayı" if pd.api.types.is_numeric_dtype(frame[variable]) else "metin"
             rows.append({"degisken": variable, "saklama": stored, "tur": kind, "ayrinti": detail})
         state.tables[op.result] = pd.DataFrame(rows).set_index("degisken")
+    elif isinstance(op, Event):
+        frame = state.frames[op.frame]
+        frame[op.name] = frame[op.column].isin(list(op.values)).astype(float)
+    elif isinstance(op, ShowFrame):
+        missing = sorted(set(op.columns) - set(state.frames[op.frame].columns))
+        if missing:
+            raise ValueError(f"{op.frame}: gösterilecek sütun yok: {', '.join(missing)}")
     elif isinstance(op, MapCodes):
         frame = state.frames[op.frame]
         frame[op.name] = T.map_codes(frame[op.source], op.mapping)
@@ -204,6 +230,8 @@ def execute(op: Operation, state: LabState) -> None:
             frame[op.name] = rng.uniform(op.first, op.second, size=len(frame))
         elif op.distribution == "beta":
             frame[op.name] = rng.beta(op.first, op.second, size=len(frame))
+        elif op.distribution == "gamma":
+            frame[op.name] = rng.gamma(op.first, op.second, size=len(frame))
         else:
             raise ValueError(f"Desteklenmeyen dağılım: {op.distribution}")
     elif isinstance(op, DrawCategory):
@@ -220,6 +248,14 @@ def execute(op: Operation, state: LabState) -> None:
     elif isinstance(op, Statistic):
         series = _subset(state.frames[op.frame], op.where)[op.variable]
         state.scalars[op.name] = statistic(series, op.stat)
+    elif isinstance(op, PairStatistic):
+        frame = state.frames[op.frame]
+        if op.stat == "cov":
+            state.scalars[op.name] = float(frame[op.x].cov(frame[op.y]))
+        elif op.stat == "corr":
+            state.scalars[op.name] = float(frame[op.x].corr(frame[op.y]))
+        else:
+            raise ValueError(f"Desteklenmeyen iki değişkenli istatistik: {op.stat}")
     elif isinstance(op, Scalar):
         state.scalars[op.name] = evaluate_scalar(op.expr, state)
     elif isinstance(op, ScalarTable):
@@ -237,7 +273,18 @@ def execute(op: Operation, state: LabState) -> None:
     elif isinstance(op, CrossTab):
         frame = _subset(state.frames[op.frame], op.where)
         state.tables[op.result] = T.crosstab(
-            frame, op.row, op.column, op.row_order, op.column_order, percent=op.percent, margins=op.margins
+            frame, op.row, op.column, op.row_order, op.column_order, percent=op.percent, margins=op.margins,
+            weights=op.weights,
+        )
+    elif isinstance(op, JoinColumns):
+        first = state.tables[op.columns[0][1]]
+        state.tables[op.result] = pd.DataFrame(
+            {name: state.tables[table][column].to_numpy(dtype=float) for name, table, column in op.columns},
+            index=first.index,
+        )
+    elif isinstance(op, BoxSummary):
+        state.tables[op.result] = pd.DataFrame(
+            {label: T.box_summary(state.frames[frame][variable]) for frame, variable, label in op.series}
         )
     elif isinstance(op, ClassTable):
         values = state.frames[op.frame][op.variable]
@@ -269,8 +316,18 @@ def execute(op: Operation, state: LabState) -> None:
         # Kaynak bir veri çerçevesi ya da sonuç tablosu olabilir (ör. kümülatif yüzde eğrisi).
         frame = state.frames[op.frame] if op.frame in state.frames else without_total(state.tables[op.frame])
         state.plots[plot_key(op)] = frame[[op.x, op.y]].copy()
+    elif isinstance(op, ScatterPlot):
+        state.plots[plot_key(op)] = state.frames[op.frame][[op.x, op.y]].copy()
+    elif isinstance(op, BoxPlot):
+        boxes = []
+        for frame, variable, label in op.series:
+            values = state.frames[frame][variable]
+            summary = T.box_summary(values)
+            boxes.append((label, summary, T.outliers(values, summary)))
+        state.plots[plot_key(op)] = boxes
     elif isinstance(op, Histogram):
-        state.plots[plot_key(op)] = state.tables[op.table][[column for column, _ in op.columns]].copy()
+        source = state.tables[op.table] if op.table in state.tables else state.frames[op.table]
+        state.plots[plot_key(op)] = source[[column for column, _ in op.columns]].copy()
     elif isinstance(op, ClassHistogram):
         table = without_total(state.tables[op.table])
         state.plots[plot_key(op)] = table[["alt", "ust", op.y]].copy()

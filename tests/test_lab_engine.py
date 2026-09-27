@@ -10,7 +10,24 @@ from core.codegen.base import render_step, text, wrapped
 from core.labs import expr as E
 from core.labs import tables as T
 from core.labs.runner import LabState, execute, run_operations
-from core.labs.spec import TOTAL, Check, CrossTab, DotPlot, DrawCategory, FrequencyTable, FromCounts, NewSample
+from core.labs.spec import (
+    TOTAL,
+    BoxPlot,
+    Check,
+    CrossTab,
+    DotPlot,
+    DrawCategory,
+    FrequencyTable,
+    FromCounts,
+    Histogram,
+    InlineData,
+    JoinColumns,
+    LineChart,
+    NewSample,
+    Scalar,
+    ShowFrame,
+    Statistic,
+)
 
 
 def test_frequency_table_follows_the_given_order_and_adds_totals() -> None:
@@ -166,3 +183,69 @@ def test_string_literals_are_escaped_for_both_languages() -> None:
 def test_wrapped_lists_keep_the_requested_items_per_line() -> None:
     lines = wrapped("x = [", [str(i) for i in range(7)], "]", per_line=3)
     assert lines == ["x = [", "    0, 1, 2,", "    3, 4, 5,", "    6", "]"]
+
+
+# --- Konu 5–6 ile eklenen işlemler ----------------------------------------------------
+
+def test_counting_functions_and_new_statistics() -> None:
+    assert E.evaluate(E.comb(5, 2)) == 10 and E.evaluate(E.perm(5, 2)) == 20 and E.evaluate(E.factorial(5)) == 120
+    frame = pd.DataFrame({"g": [0.0, 1.0, 0.0, 1.0]})
+    assert list(E.evaluate(E.cummean(E.var("g")), frame)) == [0.0, 0.5, 1 / 3, 0.5]
+    assert list(E.evaluate(E.seq(E.var("g")), frame)) == [1.0, 2.0, 3.0, 4.0]
+    state = run_operations((
+        InlineData("d", ("x",), ((4,), (6,), (8,), (10,), (12,)), "Tablo 5.1"),
+        Statistic("d", "x", "var", "s2", "s²"),
+        Statistic("d", "x", "nunique", "k", "farklı değer"),
+    ))
+    assert state.scalars["s2"] == 10 and state.scalars["k"] == 5
+    python, r = render_step(_one_step(E.comb(5, 2)), 1, "Python"), render_step(_one_step(E.comb(5, 2)), 1, "R")
+    assert "math.comb(5, 2)" in python and "import math" in python and "choose(5, 2)" in r
+
+
+def _one_step(expression):
+    from core.labs.spec import LabSpec, LabStep, NoteRef
+
+    step = LabStep(1, "t", NoteRef("6.4"), "t", operations=(Scalar("c", expression, "C"),))
+    return LabSpec("konu06", "t", "6", (step,))
+
+
+def test_join_columns_keeps_the_first_table_order() -> None:
+    state = run_operations((
+        InlineData("d", ("x",), (("b",), ("a",), ("b",)), "veri"),
+        FrequencyTable("d", "x", "f1", ("b", "a")),
+        FrequencyTable("d", "x", "f2", ("b", "a"), relative=False),
+        JoinColumns("j", (("oran", "f1", "goreli"), ("sayi", "f2", "frekans"))),
+    ))
+    joined = state.tables["j"]
+    assert list(joined.index) == ["b", "a"] and list(joined["sayi"]) == [2, 1]
+    assert joined.loc["a", "oran"] == pytest.approx(1 / 3)
+
+
+def test_show_frame_requires_existing_columns() -> None:
+    state = run_operations((InlineData("d", ("x",), ((1,),), "veri"),))
+    execute(ShowFrame("d", ("x",), "göster"), state)
+    with pytest.raises(ValueError, match="gösterilecek sütun yok"):
+        execute(ShowFrame("d", ("x", "y"), "göster"), state)
+
+
+def test_new_charts_use_state_values_and_course_quartiles() -> None:
+    from core.charts import figure_for
+
+    operations = (
+        InlineData("d", ("k", "y"), tuple((k, 0.1 * (k % 3)) for k in range(1, 61)), "seri"),
+        Scalar("p", E.const(0.1), "p"),
+        Statistic("d", "y", "mean", "m", "ortalama"),
+        LineChart("d", "k", "y", "k", "oran", "Uzun seri", references=(("p", "Gerçek p"),), markers=False),
+        Histogram("d", (("y", "Değer"),), 5, 0, 0.5, "Histogram", "Değer", references=(("m", "Ortalama"),),
+                  y_label="Gözlem sayısı"),
+        BoxPlot((("d", "y", "Seri"),), "Değer", "Veri seti", "Kutu"),
+    )
+    state = run_operations(operations)
+    line, histogram, box = (figure_for(op, state) for op in operations[3:])
+    assert line.data[0].mode == "lines" and list(line.data[1].y) == [0.1, 0.1]
+    assert line.layout.xaxis.dtick is None  # 60 farklı değer: her değere işaret konmaz
+    assert histogram.data[-1].x[0] == pytest.approx(state.scalars["m"])
+    assert histogram.layout.yaxis.title.text == "Gözlem sayısı"
+    summary = T.box_summary(state.frames["d"]["y"])
+    assert (box.data[0].q1[0], box.data[0].median[0], box.data[0].q3[0]) == (summary["q1"], summary["medyan"],
+                                                                                summary["q3"])

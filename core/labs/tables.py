@@ -7,11 +7,12 @@ uygulamanın sayısı ile öğrencinin çalıştıracağı kodun sayısı bit d�
 from __future__ import annotations
 
 from collections.abc import Sequence
+from itertools import combinations, permutations, product
 
 import numpy as np
 import pandas as pd
 
-from core.labs.spec import CLASS_COLUMNS, TOTAL, TOTALLED_CLASS_COLUMNS
+from core.labs.spec import BOX_ROWS, CLASS_COLUMNS, TOTAL, TOTALLED_CLASS_COLUMNS
 
 
 def inline_frame(columns: Sequence[str], rows: Sequence[Sequence[object]]) -> pd.DataFrame:
@@ -32,11 +33,32 @@ def from_counts(columns: Sequence[str], rows: Sequence[Sequence[object]]) -> pd.
     return counts.loc[counts.index.repeat(counts["sayi"]), list(columns)].reset_index(drop=True)
 
 
-def frequency_table(values: pd.Series, order: Sequence[str], *, relative: bool = True,
-                    totals: bool = False) -> pd.DataFrame:
-    """Frekans dağılımı: f, r = f/n ve p = 100 r; kategoriler ``order`` sırasıyla."""
+def outcomes(stages: Sequence[tuple[str, Sequence[object]]]) -> pd.DataFrame:
+    """Aşamaların seçeneklerinin bütün bileşimleri; ilk aşama en yavaş değişir (``itertools.product``)."""
 
-    unknown = sorted(set(values.dropna().astype(str)) - set(order))
+    names = [name for name, _ in stages]
+    return pd.DataFrame(list(product(*[list(values) for _, values in stages])), columns=names)
+
+
+def selections(items: Sequence[str], k: int, ordered: bool, columns: Sequence[str]) -> pd.DataFrame:
+    """``items`` içinden ``k`` öğenin kombinasyonları (sıra önemsiz) ya da permütasyonları, sözlük sırasıyla."""
+
+    if len(columns) != k:
+        raise ValueError("Her seçim sırası için bir sütun adı gerekir.")
+    chosen = permutations(items, k) if ordered else combinations(items, k)
+    return pd.DataFrame(list(chosen), columns=list(columns))
+
+
+def frequency_table(values: pd.Series, order: Sequence[object], *, relative: bool = True,
+                    totals: bool = False) -> pd.DataFrame:
+    """Frekans dağılımı: f, r = f/n ve p = 100 r; kategoriler ``order`` sırasıyla.
+
+    ``order`` sayılardan oluşuyorsa (ör. iki zarın toplamı 2, 3, …, 12) değerler sayı olarak eşleştirilir.
+    """
+
+    numeric = all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in order)
+    present = set(values.dropna()) if numeric else set(values.dropna().astype(str))
+    unknown = sorted(str(value) for value in present - set(order))
     if unknown:
         raise ValueError("Sırada olmayan kategori: " + ", ".join(unknown))
     table = values.value_counts().reindex(list(order), fill_value=0).to_frame("frekans")
@@ -50,12 +72,19 @@ def frequency_table(values: pd.Series, order: Sequence[str], *, relative: bool =
 
 
 def crosstab(frame: pd.DataFrame, row: str, column: str, row_order: Sequence[str], column_order: Sequence[str], *,
-             percent: str | None = None, margins: bool = False) -> pd.DataFrame:
-    """Çapraz tablo: sayılar, satır yüzdeleri (payda satır toplamı) veya sütun yüzdeleri (payda sütun toplamı)."""
+             percent: str | None = None, margins: bool = False, weights: str | None = None) -> pd.DataFrame:
+    """Çapraz tablo: sayılar, satır yüzdeleri (payda satır toplamı) veya sütun yüzdeleri (payda sütun toplamı).
 
-    counts = pd.crosstab(frame[row], frame[column]).reindex(
-        index=list(row_order), columns=list(column_order), fill_value=0
-    )
+    ``weights`` verilirse hücreler o sütunun toplamıdır (ör. örnek noktaların olasılıkları).
+    """
+
+    if weights is None:
+        counts = pd.crosstab(frame[row], frame[column])
+    else:
+        if percent is not None:
+            raise ValueError("Ağırlıklı çapraz tablo yalnız toplamları verir (percent=None).")
+        counts = pd.crosstab(frame[row], frame[column], values=frame[weights], aggfunc="sum").fillna(0)
+    counts = counts.reindex(index=list(row_order), columns=list(column_order), fill_value=0)
     if percent is None:
         table = counts
         if margins:
@@ -185,6 +214,33 @@ def percentile(values, p: float, method: str = "ders") -> float:
         return float(x[-1])
     k = int(np.floor(location))
     return float(x[k - 1] + (location - k) * (x[k] - x[k - 1]))
+
+
+def box_summary(values) -> pd.Series:
+    """Kutu grafiği özeti (``BOX_ROWS``): beş sayı özeti ders kuralıyla, IQR, 1,5·IQR sınırları, bıyık uçları.
+
+    Bıyıklar sınırların içindeki en küçük ve en büyük gözleme uzanır; sınırların dışındaki gözlemler aykırı
+    değer adaylarıdır. Üretilen koddaki ``kutu_ozeti`` fonksiyonuyla aynı işlem sırası.
+    """
+
+    x = np.sort(np.asarray(values, dtype=float))
+    q1, medyan, q3 = percentile(x, 25), percentile(x, 50), percentile(x, 75)
+    iqr = q3 - q1
+    alt, ust = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    icerde = x[(x >= alt) & (x <= ust)]
+    values_by_row = {
+        "en_kucuk": x[0], "q1": q1, "medyan": medyan, "q3": q3, "en_buyuk": x[-1], "iqr": iqr,
+        "alt_sinir": alt, "ust_sinir": ust, "alt_biyik": icerde.min(), "ust_biyik": icerde.max(),
+        "aykiri_sayisi": float(((x < alt) | (x > ust)).sum()),
+    }
+    return pd.Series([float(values_by_row[row]) for row in BOX_ROWS], index=list(BOX_ROWS))
+
+
+def outliers(values, summary: pd.Series) -> np.ndarray:
+    """Q₁ − 1,5·IQR ve Q₃ + 1,5·IQR sınırlarının dışındaki gözlemler (veri sırasıyla)."""
+
+    x = np.asarray(values, dtype=float)
+    return x[(x < summary["alt_sinir"]) | (x > summary["ust_sinir"])]
 
 
 def map_codes(values: pd.Series, mapping: Sequence[tuple[str, float]]) -> pd.Series:

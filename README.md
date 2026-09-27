@@ -20,8 +20,8 @@ Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç 
 | 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 12 | 56 | 3 | 24 |
 | 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 11 | 85 | 3 | 24 |
 | 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı | 10 | 32 | 3 | 24 |
-| 05 | Değişkenlik, Dağılım ve İlişki | Eski yapı | — | — | — | — |
-| 06 | Olasılığın Temelleri | Eski yapı | — | — | — | — |
+| 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı | 12 | 40 | 3 | 24 |
+| 06 | Olasılığın Temelleri | Yeni yapı | 9 | 35 | 3 | 24 |
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Eski yapı | — | — | — | — |
 | 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Eski yapı | — | — | — | — |
 | 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Eski yapı | — | — | — | — |

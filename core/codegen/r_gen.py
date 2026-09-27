@@ -19,6 +19,8 @@ from core.labs import expr as E
 from core.labs.spec import (
     TOTAL,
     BarChart,
+    BoxPlot,
+    BoxSummary,
     CellTarget,
     Check,
     ClassHistogram,
@@ -30,6 +32,7 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
@@ -37,17 +40,23 @@ from core.labs.spec import (
     GroupSummary,
     Histogram,
     InlineData,
+    JoinColumns,
     LineChart,
     MapCodes,
     MonteCarlo,
     NewSample,
     Operation,
+    Outcomes,
+    PairStatistic,
     Percentile,
     PieChart,
     Scalar,
     ScalarTable,
     ScalarTarget,
+    ScatterPlot,
+    Selections,
     Shape,
+    ShowFrame,
     Statistic,
     StatTarget,
     StemLeaf,
@@ -57,11 +66,13 @@ from core.labs.spec import (
 from core.labs.tables import class_edges
 
 _STAT = {"sum": "sum", "mean": "mean", "median": "median", "prod": "prod", "min": "min", "max": "max",
-         "count": "length"}
+         "var": "var", "std": "sd", "count": "length"}
+"""R'nin ``var`` ve ``sd`` fonksiyonları örneklem ölçüleridir (payda n − 1)."""
 _FUNCTIONS = {
     "log": "log", "exp": "exp", "sqrt": "sqrt", "abs": "abs", "maximum": "pmax", "minimum": "pmin",
     "round": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm", "norminv": "qnorm",
-    "cumprod": "cumprod",
+    "cumprod": "cumprod", "cummean": "cumsum({0}) / seq_along({0})", "seq": "seq_along({0})",
+    "factorial": "factorial({0})", "comb": "choose({0}, {1})", "perm": "factorial({0}) / factorial({0} - {1})",
     **{name: f"as.numeric({{0}} {symbol} {{1}})" for name, symbol in E.COMPARISONS.items()},
 }
 _REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3", "4")))
@@ -89,6 +100,34 @@ _PERCENTILE = [
     "  if (konum >= n) return(x[n])",
     "  k <- floor(konum)",
     "  x[k] + (konum - k) * (x[k + 1] - x[k])",
+    "}",
+]
+
+
+_BOX_SUMMARY = [
+    "# Kutu grafiği özeti: çeyrekler ders kuralıyla (yuzdelik); bıyıklar Q1 - 1,5·IQR ile Q3 + 1,5·IQR",
+    "# sınırlarının içindeki en uç gözlemlere uzanır; sınırların dışındakiler aykırı değer adayıdır.",
+    "kutu_ozeti <- function(x) {",
+    "  x <- sort(x)",
+    "  q1 <- yuzdelik(x, 25)",
+    "  medyan <- yuzdelik(x, 50)",
+    "  q3 <- yuzdelik(x, 75)",
+    "  iqr <- q3 - q1",
+    "  alt <- q1 - 1.5 * iqr",
+    "  ust <- q3 + 1.5 * iqr",
+    "  icerde <- x[x >= alt & x <= ust]",
+    "  c(en_kucuk = x[1], q1 = q1, medyan = medyan, q3 = q3, en_buyuk = x[length(x)], iqr = iqr,",
+    "    alt_sinir = alt, ust_sinir = ust, alt_biyik = min(icerde), ust_biyik = max(icerde),",
+    "    aykiri_sayisi = sum(x < alt | x > ust))",
+    "}",
+]
+_ORDERED_SELECTIONS = [
+    "# Sıralı seçimler (permütasyonlar), sözlük sırasıyla: k konumun bütün bileşimlerinden aynı öğeyi",
+    "# birden fazla kez içerenler atılır.",
+    "sirali_secimler <- function(x, k) {",
+    "  g <- as.matrix(expand.grid(rep(list(seq_along(x)), k)))[, k:1, drop = FALSE]",
+    "  g <- g[apply(g, 1, function(r) length(unique(r)) == k), , drop = FALSE]",
+    "  matrix(x[g], ncol = k)",
     "}",
 ]
 
@@ -131,6 +170,8 @@ def _statistic(values: str, stat: str) -> str:
         return f"as.numeric(names(which(table({values}) == max(table({values})))))"
     if stat == "mode_freq":
         return f"max(table({values}))"
+    if stat == "nunique":
+        return f"length(unique({values}))"
     return f"{_STAT[stat]}({values})"
 
 
@@ -159,13 +200,19 @@ class RGenerator(Generator):
     def helpers(self, operations: tuple[Operation, ...], *, with_checks: bool) -> list[str]:
         lines: list[str] = []
         flat = flatten(operations)
-        labelled = (BarChart, GroupedBarChart, CompareBarChart, PieChart)
-        if any(isinstance(op, labelled) or (isinstance(op, ClassHistogram) and op.labels) for op in flat):
+        labelled = (BarChart, CompareBarChart, PieChart)
+        if any(isinstance(op, labelled) or (isinstance(op, (ClassHistogram, GroupedBarChart)) and op.labels)
+               for op in flat):
             lines += _NUMBER_TEXT + [""]
         if any(isinstance(op, (ClassTable, ClassHistogram)) for op in flat):
             lines += _BOUNDARY_TEXT + [""]
-        if any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
+        boxes = any(isinstance(op, (BoxSummary, BoxPlot)) for op in flat)
+        if boxes or any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
             lines += _PERCENTILE + [""]
+        if boxes:
+            lines += _BOX_SUMMARY + [""]
+        if any(isinstance(op, Selections) and op.ordered for op in flat):
+            lines += _ORDERED_SELECTIONS + [""]
         if with_checks:
             lines += [
                 "# Hesaplanan değeri ders notlarındaki basılı değerle karşılaştırır",
@@ -192,8 +239,20 @@ class RGenerator(Generator):
             return self._inline(op)
         if isinstance(op, FromCounts):
             return self._from_counts(op)
+        if isinstance(op, Outcomes):
+            return self._outcomes(op)
+        if isinstance(op, Selections):
+            return self._selections(op)
         if isinstance(op, VariableTypes):
             return self._variable_types(op)
+        if isinstance(op, Event):
+            members = ", ".join(str(value) for value in op.values)
+            return [
+                f"# {op.comment}: {op.column} ∈ {{{members}}} olan satırlar 1, diğerleri 0",
+                f"{op.frame}${op.name} <- as.integer({op.frame}${op.column} %in% {_vector(op.values)})",
+            ]
+        if isinstance(op, ShowFrame):
+            return [f"# {op.comment}", f"print({op.frame}[, {_vector(op.columns)}, drop = FALSE])"]
         if isinstance(op, MapCodes):
             pairs = ", ".join(f"{text(label)} = {text(code)}" for label, code in op.mapping)
             return [
@@ -223,6 +282,7 @@ class RGenerator(Generator):
                 "normal": f"rnorm(nrow({op.frame}), mean = {a}, sd = {b})",
                 "uniform": f"runif(nrow({op.frame}), min = {a}, max = {b})",
                 "beta": f"rbeta(nrow({op.frame}), shape1 = {a}, shape2 = {b})",
+                "gamma": f"rgamma(nrow({op.frame}), shape = {a}, scale = {b})",
             }[op.distribution]
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {call}"]
         if isinstance(op, DrawCategory):
@@ -248,6 +308,14 @@ class RGenerator(Generator):
                 f"{op.name} <- {_statistic(values, op.stat)}",
                 f'cat(sprintf("{_sprintf(op.comment)}: %.{op.decimals}f\\n", {op.name}))',
             ]
+        if isinstance(op, PairStatistic):
+            function = {"cov": "cov", "corr": "cor"}[op.stat]
+            note = "  # payda n - 1" if op.stat == "cov" else "  # Pearson korelasyonu"
+            return [
+                f"# {op.comment}",
+                f"{op.name} <- {function}({op.frame}${op.x}, {op.frame}${op.y}){note}",
+                f'cat(sprintf("{_sprintf(op.comment)}: %.{op.decimals}f\\n", {op.name}))',
+            ]
         if isinstance(op, Scalar):
             rhs = E.render(op.expr, self.dialect(""))
             shown = f"%%%.{op.decimals}f" if op.percent else f"%.{op.decimals}f"
@@ -267,6 +335,26 @@ class RGenerator(Generator):
             return self._frequency(op)
         if isinstance(op, CrossTab):
             return self._crosstab(op)
+        if isinstance(op, JoinColumns):
+            items = [f'  {text(name)} = {table}[, "{column}"],' for name, table, column in op.columns]
+            return [
+                f"{op.result} <- data.frame(",
+                *items,
+                f"  row.names = rownames({op.columns[0][1]}),",
+                "  check.names = FALSE",
+                ")",
+                f"print(round({op.result}, {op.decimals}))",
+            ]
+        if isinstance(op, BoxSummary):
+            items = [f"  {text(label)} = kutu_ozeti({frame}${variable})," for frame, variable, label in op.series]
+            return [
+                "# Beş sayı özeti, IQR, aykırı değer sınırları ve bıyık uçları",
+                f"{op.result} <- data.frame(",
+                *items,
+                "  check.names = FALSE",
+                ")",
+                f"print(round({op.result}, 3))",
+            ]
         if isinstance(op, ClassTable):
             return self._class_table(op)
         if isinstance(op, StemLeaf):
@@ -286,10 +374,15 @@ class RGenerator(Generator):
         if isinstance(op, PieChart):
             return self._pie(op)
         if isinstance(op, LineChart):
+            return self._line(op)
+        if isinstance(op, ScatterPlot):
             return [
-                f'plot({op.frame}${op.x}, {op.frame}${op.y}, type = "b", pch = 19, lwd = 2, col = "{PALETTE[0]}",',
+                f'plot({op.frame}${op.x}, {op.frame}${op.y}, pch = 19, col = "{PALETTE[0]}",',
                 f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+                "grid()",
             ]
+        if isinstance(op, BoxPlot):
+            return self._box_plot(op)
         if isinstance(op, Histogram):
             return self._histogram(op)
         if isinstance(op, MonteCarlo):
@@ -330,6 +423,50 @@ class RGenerator(Generator):
             f"print(nrow({op.frame}))  # gözlem sayısı",
         ]
         return lines
+
+    def _outcomes(self, op: Outcomes) -> list[str]:
+        if len(op.stages) == 1:
+            name, values = op.stages[0]
+            shown = f"print({op.frame})" if len(values) <= 12 else f"print(head({op.frame}, 5))  # ilk beş sonuç"
+            return [
+                f"# {op.comment}",
+                f"{op.frame} <- data.frame({name} = {_vector(values)}, stringsAsFactors = FALSE)",
+                shown,
+                f'cat("Sonuç sayısı:", nrow({op.frame}), "\\n")',
+            ]
+        stages = [f"  {name} = {_vector(values)}" for name, values in op.stages]
+        stages = [stage + ("," if index < len(stages) - 1 else "") for index, stage in enumerate(stages)]
+        count = 1
+        for _, values in op.stages:
+            count *= len(values)
+        shown = f"print({op.frame})" if count <= 12 else f"print(head({op.frame}, 5))  # ilk beş sonuç"
+        return [
+            f"# {op.comment}",
+            f"{op.frame}_asamalar <- list(",
+            *stages,
+            ")",
+            "# Bütün bileşimler (çarpım kuralı). expand.grid ilk aşamayı en hızlı değiştirir; aşamalar ters",
+            "# sırayla verilip sütunlar yeniden dizildiği için son aşama en hızlı değişir (ağaç diyagramındaki sıra).",
+            f"{op.frame} <- expand.grid(rev({op.frame}_asamalar), stringsAsFactors = FALSE)"
+            f"[, names({op.frame}_asamalar), drop = FALSE]",
+            shown,
+            f'cat("Sonuç sayısı:", nrow({op.frame}), "\\n")',
+        ]
+
+    def _selections(self, op: Selections) -> list[str]:
+        items = f"{op.frame}_ogeler"
+        if op.ordered:
+            rows, note = f"sirali_secimler({items}, {op.k})", "sıra önemli: permütasyonlar"
+        else:
+            rows, note = f"t(combn({items}, {op.k}))", "sıra önemsiz: kombinasyonlar"
+        return [
+            f"# {op.comment} ({note})",
+            f"{items} <- {_vector(op.items)}",
+            f"{op.frame} <- as.data.frame({rows}, stringsAsFactors = FALSE)",
+            f"names({op.frame}) <- {_vector(op.columns)}",
+            f"print(head({op.frame}, 10))",
+            f'cat("Seçim sayısı:", nrow({op.frame}), "\\n")',
+        ]
 
     def _variable_types(self, op: VariableTypes) -> list[str]:
         lines = [
@@ -440,6 +577,21 @@ class RGenerator(Generator):
             f"  factor({data}${op.row}, levels = {_vector(op.row_order)}),",
             f"  factor({data}${op.column}, levels = {_vector(op.column_order)})",
         ]
+        if op.weights is not None:
+            terms = [
+                f"  factor({data}${op.row}, levels = {_vector(op.row_order)}) +",
+                f"  factor({data}${op.column}, levels = {_vector(op.column_order)})",
+            ]
+            lines += [
+                f'# Hücreler gözlem sayısı değil, "{op.weights}" sütununun toplamıdır',
+                f"{op.result} <- as.data.frame.matrix(xtabs({data}${op.weights} ~", *terms, "))",
+            ]
+            if op.margins:
+                lines += [
+                    f'{op.result}["{TOTAL}", ] <- colSums({op.result})  # sütun toplamları',
+                    f"{op.result}${TOTAL} <- rowSums({op.result})  # satır toplamları",
+                ]
+            return lines + [f"print(round({op.result}, {op.decimals}))"]
         if op.percent is None:
             lines += [f"{op.result} <- as.data.frame.matrix(table(", *factors, "))"]
             if op.margins:
@@ -596,6 +748,59 @@ class RGenerator(Generator):
             )
         return lines
 
+    def _line(self, op: LineChart) -> list[str]:
+        kind = "b" if op.markers else "l"
+        values = [f"{op.frame}${op.y}", *(name for name, _ in op.references)]
+        # Başvuru çizgileri dikey eksenin içinde kalsın: eksen seriyi ve başvuru değerlerini kapsar.
+        limits = [f"     ylim = range(c({', '.join(values)})),"] if op.references else []
+        lines = [
+            f'plot({op.frame}${op.x}, {op.frame}${op.y}, type = "{kind}", pch = 19, lwd = 2, col = "{PALETTE[0]}",',
+            *limits,
+            f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+        ]
+        if op.references:
+            colors, ltys, labels = [f'"{PALETTE[0]}"'], ["1"], [text(op.y_label)]
+            for index, (name, label) in enumerate(op.references):
+                color, lty = _REFERENCE_STYLES[index % len(_REFERENCE_STYLES)]
+                lines.append(f'abline(h = {name}, col = "{color}", lty = {lty}, lwd = 2)')
+                colors.append(f'"{color}"')
+                ltys.append(lty)
+                labels.append(text(label))
+            lines.append(
+                f'legend("topright", legend = c({", ".join(labels)}), col = c({", ".join(colors)}), '
+                f'lty = c({", ".join(ltys)}), lwd = 2, bty = "n")'
+            )
+        return lines
+
+    def _box_plot(self, op: BoxPlot) -> list[str]:
+        items = [f"  {text(label)} = {frame}${variable}" for frame, variable, label in op.series]
+        items = [item + ("," if index < len(items) - 1 else "") for index, item in enumerate(items)]
+        return [
+            "# Kutu: Q1'den Q3'e; çizgi: medyan; bıyıklar: sınırların içindeki en uç gözlemler; noktalar: aykırı",
+            "seriler <- list(",
+            *items,
+            ")",
+            "ozetler <- lapply(seriler, kutu_ozeti)",
+            "aykiri <- c()",
+            "grup <- c()",
+            "for (i in seq_along(seriler)) {",
+            '  secili <- seriler[[i]][seriler[[i]] < ozetler[[i]]["alt_sinir"] |',
+            '                        seriler[[i]] > ozetler[[i]]["ust_sinir"]]',
+            "  aykiri <- c(aykiri, secili)",
+            "  grup <- c(grup, rep(i, length(secili)))",
+            "}",
+            "# bxp() kutuları verilen özetlerle çizer (boxplot() kendi çeyrek kuralını kullanırdı)",
+            "eski_par <- par(mar = c(5, 10, 4, 2))  # uzun seri adları için geniş sol kenar",
+            'bxp(list(stats = sapply(ozetler, function(k) k[c("alt_biyik", "q1", "medyan", "q3", "ust_biyik")]),',
+            "         n = lengths(seriler), out = aykiri, group = grup, names = names(seriler)),",
+            f'    horizontal = TRUE, boxwex = 0.5, boxfill = adjustcolor("{PALETTE[0]}", 0.2),',
+            f'    medcol = "{PALETTE[1]}", medlwd = 3, whisklty = 1, outpch = 19, outcol = "{PALETTE[1]}", las = 1,',
+            "    show.names = TRUE,",
+            f'    xlab = "{_quote(op.x_label)}", main = "{_quote(op.title)}")',
+            f'title(ylab = "{_quote(op.y_label)}", line = 8.5)',
+            "par(eski_par)",
+        ]
+
     def _chart_matrix(self, table: str) -> str:
         """Grafikte çizilecek sayılar: ``Toplam`` satırı ve sütunu çıkarılmış matris."""
 
@@ -647,19 +852,23 @@ class RGenerator(Generator):
             f"text(konum, cizim, labels = {labels}, pos = 3, xpd = TRUE)",
         ]
 
-    def _bars_with_legend(self, x_label: str, y_label: str, title: str, stacked: bool, decimals: int) -> list[str]:
+    def _bars_with_legend(self, x_label: str, y_label: str, title: str, stacked: bool, decimals: int,
+                          labels: bool = True) -> list[str]:
         """``cizim`` matrisinin çok serili sütun grafiği: satırlar seriler, sütunlar yatay eksen."""
 
         x_label, y_label, title = _quote(x_label), _quote(y_label), _quote(title)
         colors = f"{_colors(len(PALETTE))}[seq_len(nrow(cizim))]"
         if stacked:
+            middle = [
+                "orta <- apply(cizim, 2, function(s) cumsum(s) - s / 2)  # her parçanın ortası",
+                f'text(rep(konum, each = nrow(cizim)), orta, labels = sayi_metni(cizim, {decimals}), col = "white")',
+            ]
             return [
                 f"renkler <- {colors}",
                 "konum <- barplot(cizim, col = renkler, border = NA, ylim = c(0, max(colSums(cizim)) * 1.3),",
                 f'                 xlab = "{x_label}", ylab = "{y_label}",',
                 f'                 main = "{title}")',
-                "orta <- apply(cizim, 2, function(s) cumsum(s) - s / 2)  # her parçanın ortası",
-                f'text(rep(konum, each = nrow(cizim)), orta, labels = sayi_metni(cizim, {decimals}), col = "white")',
+                *(middle if labels else []),
                 'legend("top", legend = rownames(cizim), fill = renkler, border = NA, horiz = TRUE, bty = "n")',
             ]
         return [
@@ -667,7 +876,7 @@ class RGenerator(Generator):
             "konum <- barplot(cizim, beside = TRUE, col = renkler, border = NA, ylim = range(0, cizim) * 1.3,",
             f'                 xlab = "{x_label}", ylab = "{y_label}",',
             f'                 main = "{title}")',
-            f"text(konum, cizim, labels = sayi_metni(cizim, {decimals}), pos = 3, xpd = TRUE)",
+            *([f"text(konum, cizim, labels = sayi_metni(cizim, {decimals}), pos = 3, xpd = TRUE)"] if labels else []),
             'legend("top", legend = rownames(cizim), fill = renkler, border = NA, horiz = TRUE, bty = "n")',
         ]
 
@@ -677,7 +886,7 @@ class RGenerator(Generator):
             lines = ["# Tablonun satırları seriler, sütunları yatay eksende", f"cizim <- {matrix}"]
         else:
             lines = ["# Tablonun sütunları seriler, satırları yatay eksende (matris devriği)", f"cizim <- t({matrix})"]
-        return lines + self._bars_with_legend(op.x_label, op.y_label, op.title, op.stacked, op.decimals)
+        return lines + self._bars_with_legend(op.x_label, op.y_label, op.title, op.stacked, op.decimals, op.labels)
 
     def _compare(self, op: CompareBarChart) -> list[str]:
         items = [f'  {text(label)} = {name}[, "{op.column}"]' for label, name in op.tables]
@@ -721,7 +930,7 @@ class RGenerator(Generator):
             if index == 0:
                 lines += [
                     f'hist(aralikta({item}), breaks = kutular, col = {color}, border = "white",',
-                    f'     ylim = c(0, max(sayimlar)), xlab = "{_quote(op.x_label)}", ylab = "Tekrar sayısı",',
+                    f'     ylim = c(0, max(sayimlar)), xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}",',
                     f'     main = "{_quote(op.title)}")',
                 ]
             else:
@@ -732,7 +941,8 @@ class RGenerator(Generator):
             colors.append("NA")
         for index, (value, label) in enumerate(op.references):
             color, lty = _REFERENCE_STYLES[index % len(_REFERENCE_STYLES)]
-            lines.append(f'abline(v = {E.format_number(value)}, col = "{color}", lty = {lty}, lwd = 2)')
+            position = value if isinstance(value, str) else E.format_number(value)
+            lines.append(f'abline(v = {position}, col = "{color}", lty = {lty}, lwd = 2)')
             fills.append("NA")
             labels.append(text(label))
             ltys.append(lty)
@@ -776,7 +986,9 @@ class RGenerator(Generator):
         if isinstance(target, ScalarTarget):
             return target.name
         if isinstance(target, TableTarget):
-            return f"{target.table}[{text(target.row)}, {text(target.column)}]"
+            # Satır adı her zaman metin olarak verilir: tbl[7, ] yedinci satırı, tbl["7", ] adı 7 olan satırı seçer.
+            row = target.row if isinstance(target.row, str) else E.format_number(float(target.row))
+            return f"{target.table}[{text(row)}, {text(target.column)}]"
         if isinstance(target, CellTarget):
             return f"{target.frame}${target.column}[{target.row}]"
         raise TypeError(f"Tanınmayan hedef: {type(target).__name__}")

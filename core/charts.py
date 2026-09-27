@@ -15,6 +15,7 @@ from core.codegen.base import PALETTE, REFERENCE_COLORS
 from core.labs.runner import LabState, plot_key
 from core.labs.spec import (
     BarChart,
+    BoxPlot,
     ClassHistogram,
     CompareBarChart,
     DotPlot,
@@ -23,10 +24,14 @@ from core.labs.spec import (
     LineChart,
     Operation,
     PieChart,
+    ScatterPlot,
 )
 from core.labs.tables import boundary_label
 
-CHART_TYPES = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram, ClassHistogram, DotPlot)
+CHART_TYPES = (
+    BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
+    DotPlot,
+)
 
 
 def tr_number(value: float, decimals: int = 0, percent: bool = False) -> str:
@@ -93,20 +98,21 @@ def _bar(op: BarChart, data: pd.DataFrame) -> go.Figure:
 
 
 def _series_bars(table: pd.DataFrame, *, stacked: bool, decimals: int, title: str, x_title: str,
-                 y_title: str, legend_title: str) -> go.Figure:
+                 y_title: str, legend_title: str, labels: bool = True) -> go.Figure:
     """Satırlar seriler, sütunlar yatay eksen: üretilen koddaki matrisle aynı düzen."""
 
     figure = go.Figure()
     categories = [str(column) for column in table.columns]
     for index, (series, row) in enumerate(table.iterrows()):
         values = row.to_numpy(dtype=float)
+        shown = [tr_number(value, decimals) for value in values]
         figure.add_trace(
             go.Bar(
                 name=str(series), x=categories, y=values, marker_color=PALETTE[index % len(PALETTE)],
-                text=[tr_number(value, decimals) for value in values],
+                text=shown if labels else None, hovertext=shown,
                 textposition="inside" if stacked else "outside", cliponaxis=False,
                 insidetextfont={"color": "white"},
-                hovertemplate=f"{series}<br>%{{x}}: %{{text}}<extra></extra>",
+                hovertemplate=f"{series}<br>%{{x}}: %{{hovertext}}<extra></extra>",
             )
         )
     figure.update_layout(barmode="stack" if stacked else "group")
@@ -134,20 +140,80 @@ def _pie(op: PieChart, table: pd.DataFrame) -> go.Figure:
     return style_figure(figure, title=op.title, x_title="", y_title="")
 
 
-def _line(op: LineChart, data: pd.DataFrame) -> go.Figure:
+def _line(op: LineChart, data: pd.DataFrame, state: LabState) -> go.Figure:
+    """Çizgi grafiği; ``references`` yatay başvuru çizgileridir (ör. gerçek olasılık) ve açıklamada görünür."""
+
+    x = data[op.x].to_numpy(dtype=float)
     figure = go.Figure(
         go.Scatter(
-            x=data[op.x], y=data[op.y], mode="lines+markers", line={"color": PALETTE[0], "width": 2.5},
-            marker={"size": 8}, hovertemplate="%{x}: %{y}<extra></extra>",
+            x=x, y=data[op.y], mode="lines+markers" if op.markers else "lines", name=op.y_label,
+            line={"color": PALETTE[0], "width": 2.5}, marker={"size": 8},
+            hovertemplate="%{x}: %{y}<extra></extra>" if op.markers else "%{x}: %{y:.3f}<extra></extra>",
         )
     )
-    steps = np.diff(np.unique(data[op.x].to_numpy(dtype=float)))
-    if len(steps) and np.allclose(steps, steps[0]):
-        figure.update_xaxes(dtick=float(steps[0]))  # eşit aralıklı yatay eksen: her değer bir işaret
+    for index, (name, label) in enumerate(op.references):
+        value = float(state.scalars[name])
+        figure.add_trace(
+            go.Scatter(
+                x=[x.min(), x.max()], y=[value, value], mode="lines", name=label, hoverinfo="skip",
+                line={"color": REFERENCE_COLORS[index % len(REFERENCE_COLORS)], "width": 2.5,
+                      "dash": ("dash", "dot", "dashdot")[index % 3]},
+            )
+        )
+    if op.references:
+        figure.update_layout(legend={"orientation": "h", "y": -0.25})
+    unique = np.unique(x)
+    steps = np.diff(unique)
+    if 1 < len(unique) <= 20 and np.allclose(steps, steps[0]):
+        figure.update_xaxes(dtick=float(steps[0]))  # az sayıda eşit aralıklı değer: her değer bir işaret
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
-def _histogram(op: Histogram, data: pd.DataFrame) -> go.Figure:
+def _scatter(op: ScatterPlot, data: pd.DataFrame) -> go.Figure:
+    figure = go.Figure(
+        go.Scatter(
+            x=data[op.x], y=data[op.y], mode="markers", marker={"color": PALETTE[0], "size": 11},
+            hovertemplate=f"{op.x_label}: %{{x}}<br>{op.y_label}: %{{y}}<extra></extra>",
+        )
+    )
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _box(op: BoxPlot, boxes) -> go.Figure:
+    """Hazır özetlerle yatay kutu grafiği: çeyrekler ders kuralıyla (Plotly'nin kendi çeyrek kuralı kullanılmaz).
+
+    Kutular üretilen koddaki gibi 1, 2, … konumlarına çizilir (ilk seri altta); medyan kırmızı çizgidir.
+    """
+
+    figure = go.Figure()
+    for position, (label, summary, outliers) in enumerate(boxes, start=1):
+        figure.add_trace(
+            go.Box(
+                y=[position], q1=[summary["q1"]], median=[summary["medyan"]], q3=[summary["q3"]],
+                lowerfence=[summary["alt_biyik"]], upperfence=[summary["ust_biyik"]], orientation="h", width=0.5,
+                name=label, fillcolor="rgba(16, 124, 137, 0.2)", line={"color": PALETTE[0], "width": 2},
+                showlegend=False, hovertemplate="%{x}<extra></extra>",
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[summary["medyan"]] * 2, y=[position - 0.25, position + 0.25], mode="lines", showlegend=False,
+                line={"color": PALETTE[1], "width": 3}, hovertemplate=f"{label}: medyan %{{x}}<extra></extra>",
+            )
+        )
+        if len(outliers):
+            figure.add_trace(
+                go.Scatter(
+                    x=outliers, y=[position] * len(outliers), mode="markers", showlegend=False,
+                    marker={"color": PALETTE[1], "size": 11}, hovertemplate="Aykırı değer adayı: %{x}<extra></extra>",
+                )
+            )
+    figure.update_yaxes(tickvals=list(range(1, len(boxes) + 1)), ticktext=[label for label, _, _ in boxes],
+                        range=[0.4, len(boxes) + 0.6], showgrid=False)
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _histogram(op: Histogram, data: pd.DataFrame, state: LabState) -> go.Figure:
     """Üretilen kodla aynı kutular: [lower, upper] aralığında ``bins`` eşit genişlikte kutu."""
 
     edges = np.linspace(op.lower, op.upper, op.bins + 1)
@@ -162,7 +228,8 @@ def _histogram(op: Histogram, data: pd.DataFrame) -> go.Figure:
                 hovertemplate=f"{label}<br>%{{x:.2f}} civarı: %{{y}} tekrar<extra></extra>",
             )
         )
-    for index, (value, label) in enumerate(op.references):
+    for index, (reference, label) in enumerate(op.references):
+        value = float(state.scalars[reference]) if isinstance(reference, str) else float(reference)
         figure.add_trace(
             go.Scatter(
                 x=[value, value], y=[0, 1], mode="lines", name=label, yaxis="y2", hoverinfo="skip",
@@ -170,7 +237,7 @@ def _histogram(op: Histogram, data: pd.DataFrame) -> go.Figure:
             )
         )
     figure.update_layout(barmode="overlay", yaxis2={"overlaying": "y", "range": [0, 1], "visible": False})
-    return style_figure(figure, title=op.title, x_title=op.x_label, y_title="Tekrar sayısı")
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
 def _reference_lines(figure: go.Figure, references: list[tuple[float, str]]) -> None:
@@ -237,7 +304,7 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
         table = state.tables[op.table]
         legend = label(table.index.name if op.series == "satir" else table.columns.name)
         return _series_bars(data, stacked=op.stacked, decimals=op.decimals, title=op.title, x_title=op.x_label,
-                            y_title=op.y_label, legend_title=legend or "")
+                            y_title=op.y_label, legend_title=legend or "", labels=op.labels)
     if isinstance(op, CompareBarChart):
         first = state.tables[op.tables[0][1]]
         return _series_bars(data, stacked=False, decimals=op.decimals, title=op.title, x_title=op.x_label,
@@ -245,9 +312,13 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
     if isinstance(op, PieChart):
         return _pie(op, data)
     if isinstance(op, LineChart):
-        return _line(op, data)
+        return _line(op, data, state)
+    if isinstance(op, ScatterPlot):
+        return _scatter(op, data)
+    if isinstance(op, BoxPlot):
+        return _box(op, data)
     if isinstance(op, Histogram):
-        return _histogram(op, data)
+        return _histogram(op, data, state)
     if isinstance(op, ClassHistogram):
         return _class_histogram(op, data)
     if isinstance(op, DotPlot):

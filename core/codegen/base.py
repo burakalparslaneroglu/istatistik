@@ -7,18 +7,26 @@ from dataclasses import dataclass
 from core.labs import expr as E
 from core.labs.spec import (
     CHARTS,
+    BoxPlot,
+    BoxSummary,
     Check,
     ClassTable,
     CrossTab,
     Derive,
     FrequencyTable,
+    FromCounts,
+    InlineData,
+    JoinColumns,
     LabSpec,
     LabStep,
     MonteCarlo,
+    NewSample,
     Operation,
+    Outcomes,
     Scalar,
     ScalarTable,
     ScalarTarget,
+    Selections,
 )
 
 LANGUAGES = ("Python", "R")
@@ -229,15 +237,18 @@ class Generator:
     def depends_on_earlier(self, step: LabStep) -> bool:
         """Adım kendi verisini kurmuyorsa önceki adımların çıktısına dayanır."""
 
-        from core.labs.spec import FromCounts, InlineData, NewSample
-
-        created = {op.frame for op in step.operations if isinstance(op, (InlineData, FromCounts, NewSample))}
+        sources = (InlineData, FromCounts, NewSample, Outcomes, Selections)
+        created = {op.frame for op in step.operations if isinstance(op, sources)}
         used: set[str] = set()
         for op in flatten(step.operations):
             for name in ("frame", "source", "table"):
                 value = getattr(op, name, None)
                 if isinstance(value, str):
                     used.add(value)
+            if isinstance(op, (BoxSummary, BoxPlot)):
+                used |= {frame for frame, _, _ in op.series}  # kutu grafiği serileri
+            if isinstance(op, JoinColumns):
+                used |= {table for _, table, _ in op.columns}  # yan yana toplanan tablolar
         produced = {getattr(op, "result", None) for op in step.operations}
         return bool(used - created - produced)
 

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import re
+
 from core.codegen.base import (
     PALETTE,
     REFERENCE_COLORS,
@@ -19,6 +21,8 @@ from core.labs import expr as E
 from core.labs.spec import (
     TOTAL,
     BarChart,
+    BoxPlot,
+    BoxSummary,
     CellTarget,
     Check,
     ClassHistogram,
@@ -30,6 +34,7 @@ from core.labs.spec import (
     DotPlot,
     Draw,
     DrawCategory,
+    Event,
     FrequencyTable,
     FromCounts,
     GroupedBarChart,
@@ -37,17 +42,23 @@ from core.labs.spec import (
     GroupSummary,
     Histogram,
     InlineData,
+    JoinColumns,
     LineChart,
     MapCodes,
     MonteCarlo,
     NewSample,
     Operation,
+    Outcomes,
+    PairStatistic,
     Percentile,
     PieChart,
     Scalar,
     ScalarTable,
     ScalarTarget,
+    ScatterPlot,
+    Selections,
     Shape,
+    ShowFrame,
     Statistic,
     StatTarget,
     StemLeaf,
@@ -58,13 +69,19 @@ from core.labs.tables import class_edges
 
 _STAT = {
     "count": "count()", "sum": "sum()", "mean": "mean()", "median": "median()", "mode": "mode().item()",
-    "mode_freq": "value_counts().max()", "prod": "prod()", "min": "min()", "max": "max()", "value": "item()",
+    "mode_freq": "value_counts().max()", "prod": "prod()", "min": "min()", "max": "max()", "var": "var()",
+    "std": "std()", "nunique": "nunique()", "value": "item()",
 }
-"""İstatistiğin pandas karşılığı; ``mode().item()`` birden fazla mod varsa hata verir (tek mod beklenir)."""
+"""İstatistiğin pandas karşılığı; ``mode().item()`` birden fazla mod varsa hata verir (tek mod beklenir).
+``var()`` ve ``std()`` pandas'ta örneklem ölçüleridir (payda n − 1)."""
 _SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv"}
+_MATH_FUNCTIONS = set(E.COUNTING_FUNCTIONS)
 _FUNCTIONS = {
     "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
     "minimum": "np.minimum", "round": "np.rint", "floor": "np.floor", "cumprod": "np.cumprod",
+    "cummean": "np.cumsum({0}) / np.arange(1, len({0}) + 1)", "seq": "np.arange(1, len({0}) + 1)",
+    "factorial": "math.factorial(int({0}))", "comb": "math.comb(int({0}), int({1}))",
+    "perm": "math.perm(int({0}), int({1}))",
     "normcdf": "stats.norm.cdf", "normpdf": "stats.norm.pdf", "norminv": "stats.norm.ppf",
     **{name: f"np.where({{0}} {symbol} {{1}}, 1.0, 0.0)" for name, symbol in E.COMPARISONS.items()},
 }
@@ -97,6 +114,29 @@ _PERCENTILE = [
 ]
 
 
+_BOX_SUMMARY = [
+    "def kutu_ozeti(degerler):",
+    '    """Kutu grafiği özeti: çeyrekler ders kuralıyla (yuzdelik); bıyıklar Q1 − 1,5·IQR ile Q3 + 1,5·IQR',
+    '    sınırlarının içindeki en uç gözlemlere uzanır; sınırların dışındakiler aykırı değer adayıdır."""',
+    "    x = np.sort(np.asarray(degerler, dtype=float))",
+    "    q1, medyan, q3 = yuzdelik(x, 25), yuzdelik(x, 50), yuzdelik(x, 75)",
+    "    iqr = q3 - q1",
+    "    alt, ust = q1 - 1.5 * iqr, q3 + 1.5 * iqr",
+    "    icerde = x[(x >= alt) & (x <= ust)]",
+    "    return pd.Series({",
+    '        "en_kucuk": x[0], "q1": q1, "medyan": medyan, "q3": q3, "en_buyuk": x[-1], "iqr": iqr,',
+    '        "alt_sinir": alt, "ust_sinir": ust, "alt_biyik": icerde.min(), "ust_biyik": icerde.max(),',
+    '        "aykiri_sayisi": float(((x < alt) | (x > ust)).sum()),',
+    "    })",
+]
+
+
+def _render(expression: E.Expr, dialect: E.Dialect) -> str:
+    """İfadenin Python yazımı; tam sayı değişmezinin etrafındaki gereksiz ``int()`` atılır (``math.comb(5, 2)``)."""
+
+    return re.sub(r"\bint\((\d+)\)", r"\1", E.render(expression, dialect))
+
+
 def _list(values) -> str:
     return "[" + ", ".join(text(value) for value in values) + "]"
 
@@ -117,11 +157,20 @@ def _needs_numpy(operations) -> bool:
     """numpy yalnız rastgele çekiliş, grup etiketi, histogram, yüzdelik, veriden sınıf sınırı veya ifade
     fonksiyonu varsa gerekir."""
 
-    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo, Percentile)
+    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo, Percentile, BoxSummary, BoxPlot)
     for op in flatten(operations):
         if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
             return True
-    return bool(functions_used(operations) - _SCIPY_FUNCTIONS)
+    return bool(functions_used(operations) - _SCIPY_FUNCTIONS - _MATH_FUNCTIONS)
+
+
+def _needs_percentile(operations) -> bool:
+    """Ders kuralıyla yüzdelik fonksiyonu: yüzdelik işlemi ya da kutu grafiği özeti varsa."""
+
+    for op in flatten(operations):
+        if (isinstance(op, Percentile) and op.method == "ders") or isinstance(op, (BoxSummary, BoxPlot)):
+            return True
+    return False
 
 
 def _stat_call(source: str, stat: str) -> str:
@@ -132,7 +181,7 @@ def _labelled_charts(operations) -> bool:
     """Değer etiketi yazan grafikler (Türkçe sayı yardımcısı gerekir)."""
 
     for op in flatten(operations):
-        if isinstance(op, (BarChart, GroupedBarChart, CompareBarChart)):
+        if isinstance(op, (BarChart, CompareBarChart)) or (isinstance(op, GroupedBarChart) and op.labels):
             return True
         if isinstance(op, ClassHistogram) and op.labels:
             return True
@@ -153,7 +202,16 @@ class PythonGenerator(Generator):
 
     # --- Başlık ve yardımcılar ------------------------------------------
     def imports(self, operations: tuple[Operation, ...], *, script: bool = False) -> list[str]:
-        lines = ["import sys", ""] if script else []
+        flat = flatten(operations)
+        standard = ["import sys"] if script else []
+        if functions_used(operations) & _MATH_FUNCTIONS:
+            standard.append("import math")
+        tools = {"product" for op in flat if isinstance(op, Outcomes) and len(op.stages) > 1}
+        tools |= {"permutations" if op.ordered else "combinations" for op in flat if isinstance(op, Selections)}
+        tools = sorted(tools)
+        if tools:
+            standard.append(f"from itertools import {', '.join(tools)}")
+        lines = standard + [""] if standard else []
         if uses_charts(operations):
             lines.append("import matplotlib.pyplot as plt")
         if _needs_numpy(operations):
@@ -180,8 +238,10 @@ class PythonGenerator(Generator):
             lines += _NUMBER_TEXT + ["", ""]
         if any(isinstance(op, ClassTable) for op in flat):
             lines += _BOUNDARY_TEXT + ["", ""]
-        if any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
+        if _needs_percentile(operations):
             lines += _PERCENTILE + ["", ""]
+        if any(isinstance(op, (BoxSummary, BoxPlot)) for op in flat):
+            lines += _BOX_SUMMARY + ["", ""]
         if with_checks:
             lines += [
                 "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
@@ -207,6 +267,10 @@ class PythonGenerator(Generator):
             return self._inline(op)
         if isinstance(op, FromCounts):
             return self._from_counts(op)
+        if isinstance(op, Outcomes):
+            return self._outcomes(op)
+        if isinstance(op, Selections):
+            return self._selections(op)
         if isinstance(op, VariableTypes):
             rows = [f'    ({text(v)}, {text(k)}, {text(d)}),' for v, k, d in op.rows]
             return [
@@ -221,6 +285,14 @@ class PythonGenerator(Generator):
                 ').set_index("degisken")',
                 f"print({op.result})",
             ]
+        if isinstance(op, Event):
+            members = ", ".join(str(value) for value in op.values)
+            return [
+                f"# {op.comment}: {op.column} ∈ {{{members}}} olan satırlar 1, diğerleri 0",
+                f'{op.frame}["{op.name}"] = {op.frame}["{op.column}"].isin({_list(op.values)}).astype(int)',
+            ]
+        if isinstance(op, ShowFrame):
+            return [f"# {op.comment}", f"print({op.frame}[{_list(op.columns)}])"]
         if isinstance(op, MapCodes):
             pairs = ", ".join(f"{text(label)}: {text(code)}" for label, code in op.mapping)
             return [
@@ -234,7 +306,7 @@ class PythonGenerator(Generator):
                 f'{op.frame}["{op.name}"] = np.repeat({_list(op.labels)}, {_list(op.sizes)})',
             ]
         if isinstance(op, Derive):
-            rhs = E.render(op.expr, self.dialect(op.frame))
+            rhs = _render(op.expr, self.dialect(op.frame))
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {rhs}']
         if isinstance(op, NewSample):
             frame = f'{op.frame} = pd.DataFrame({{"id": np.arange(1, {op.nobs} + 1)}})'
@@ -247,7 +319,7 @@ class PythonGenerator(Generator):
             ]
         if isinstance(op, Draw):
             a, b = E.format_number(op.first), E.format_number(op.second)
-            method = {"normal": "normal", "uniform": "uniform", "beta": "beta"}[op.distribution]
+            method = {"normal": "normal", "uniform": "uniform", "beta": "beta", "gamma": "gamma"}[op.distribution]
             call = f"rng.{method}({a}, {b}, size=len({op.frame}))"
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
         if isinstance(op, DrawCategory):
@@ -274,13 +346,21 @@ class PythonGenerator(Generator):
                 f"{op.name} = {_stat_call(source, op.stat)}",
                 f'print(f"{_fstring(op.comment)}: {{{op.name}:.{op.decimals}f}}")',
             ]
+        if isinstance(op, PairStatistic):
+            method = {"cov": "cov", "corr": "corr"}[op.stat]
+            note = "  # payda n − 1" if op.stat == "cov" else "  # Pearson korelasyonu"
+            return [
+                f"# {op.comment}",
+                f'{op.name} = {op.frame}["{op.x}"].{method}({op.frame}["{op.y}"]){note}',
+                f'print(f"{_fstring(op.comment)}: {{{op.name}:.{op.decimals}f}}")',
+            ]
         if isinstance(op, Scalar):
-            rhs = E.render(op.expr, self.dialect(""))
+            rhs = _render(op.expr, self.dialect(""))
             shown = f"%{{{op.name}:.{op.decimals}f}}" if op.percent else f"{{{op.name}:.{op.decimals}f}}"
             return [f"# {op.comment}", f"{op.name} = {rhs}", f'print(f"{_fstring(op.comment)}: {shown}")']
         if isinstance(op, ScalarTable):
             dialect = self.dialect("")
-            rows = [f"    {text(label)}: {E.render(expression, dialect)}," for label, expression in op.rows]
+            rows = [f"    {text(label)}: {_render(expression, dialect)}," for label, expression in op.rows]
             return [
                 f"{op.result} = pd.DataFrame({{\"deger\": {{", *rows, "}})",
                 f"print({op.result}.round({op.decimals}))",
@@ -295,6 +375,23 @@ class PythonGenerator(Generator):
             return self._frequency(op)
         if isinstance(op, CrossTab):
             return self._crosstab(op)
+        if isinstance(op, JoinColumns):
+            items = [f'    {text(name)}: {table}["{column}"].to_numpy(),' for name, table, column in op.columns]
+            return [
+                f"{op.result} = pd.DataFrame({{",
+                *items,
+                f"}}, index={op.columns[0][1]}.index)",
+                f"print({op.result}.round({op.decimals}))",
+            ]
+        if isinstance(op, BoxSummary):
+            items = [f'    {text(label)}: kutu_ozeti({frame}["{variable}"]),' for frame, variable, label in op.series]
+            return [
+                "# Beş sayı özeti, IQR, aykırı değer sınırları ve bıyık uçları",
+                f"{op.result} = pd.DataFrame({{",
+                *items,
+                "})",
+                f"print({op.result}.round(3))",
+            ]
         if isinstance(op, ClassTable):
             return self._class_table(op)
         if isinstance(op, StemLeaf):
@@ -314,11 +411,16 @@ class PythonGenerator(Generator):
         if isinstance(op, PieChart):
             return self._pie(op)
         if isinstance(op, LineChart):
+            return self._line(op)
+        if isinstance(op, ScatterPlot):
             return [
-                "fig, ax = plt.subplots(figsize=(8, 5))",
-                f'ax.plot({op.frame}["{op.x}"], {op.frame}["{op.y}"], marker="o", color="{PALETTE[0]}")',
+                "fig, ax = plt.subplots(figsize=(7, 5))",
+                f'ax.scatter({op.frame}["{op.x}"], {op.frame}["{op.y}"], color="{PALETTE[0]}", s=45, zorder=3)',
+                "ax.grid(alpha=0.3)",
                 *self._axes(op.x_label, op.y_label, op.title),
             ]
+        if isinstance(op, BoxPlot):
+            return self._box_plot(op)
         if isinstance(op, Histogram):
             return self._histogram(op)
         if isinstance(op, MonteCarlo):
@@ -370,6 +472,47 @@ class PythonGenerator(Generator):
             f'satirlar = {name}.index.repeat({name}["sayi"])',
             f"{op.frame} = {name}.loc[satirlar, {_list(op.columns)}].reset_index(drop=True)",
             f"print(len({op.frame}))  # gözlem sayısı",
+        ]
+
+    def _outcomes(self, op: Outcomes) -> list[str]:
+        shown = f"print({op.frame})" if self._row_count(op) <= 12 else f"print({op.frame}.head())  # ilk beş sonuç"
+        if len(op.stages) == 1:
+            name, values = op.stages[0]
+            return [
+                f"# {op.comment}",
+                f"{op.frame} = pd.DataFrame({{{text(name)}: {_list(values)}}})",
+                shown,
+                f'print("Sonuç sayısı:", len({op.frame}))',
+            ]
+        stages = [f"    {text(name)}: {_list(values)}," for name, values in op.stages]
+        return [
+            f"# {op.comment}",
+            f"{op.frame}_asamalar = {{",
+            *stages,
+            "}",
+            "# Bütün bileşimler (çarpım kuralı): ilk aşama en yavaş, son aşama en hızlı değişir",
+            f"{op.frame} = pd.DataFrame(list(product(*{op.frame}_asamalar.values())),",
+            f"{' ' * len(op.frame)}                columns=list({op.frame}_asamalar))",
+            shown,
+            f'print("Sonuç sayısı:", len({op.frame}))',
+        ]
+
+    @staticmethod
+    def _row_count(op: Outcomes) -> int:
+        count = 1
+        for _, values in op.stages:
+            count *= len(values)
+        return count
+
+    def _selections(self, op: Selections) -> list[str]:
+        method = "permutations" if op.ordered else "combinations"
+        note = "sıra önemli: permütasyonlar" if op.ordered else "sıra önemsiz: kombinasyonlar"
+        return [
+            f"# {op.comment} ({note})",
+            f"{op.frame}_ogeler = {_list(op.items)}",
+            f"{op.frame} = pd.DataFrame(list({method}({op.frame}_ogeler, {op.k})), columns={_list(op.columns)})",
+            f"print({op.frame}.head(10))",
+            f'print("Seçim sayısı:", len({op.frame}))',
         ]
 
     def _draw_category(self, op: DrawCategory) -> list[str]:
@@ -437,8 +580,15 @@ class PythonGenerator(Generator):
                 f"{data} = {op.frame}[{_where(op.frame, op.where)}]",
             ]
         counts = op.result if op.percent is None else f"{op.result}_sayi"
+        if op.weights is None:
+            lines.append(f'{counts} = pd.crosstab({data}["{op.row}"], {data}["{op.column}"]).reindex(')
+        else:
+            lines += [
+                f'# Hücreler gözlem sayısı değil, "{op.weights}" sütununun toplamıdır',
+                f'{counts} = pd.crosstab({data}["{op.row}"], {data}["{op.column}"], values={data}["{op.weights}"],',
+                f'{" " * (len(counts) + 15)}aggfunc="sum").fillna(0).reindex(',
+            ]
         lines += [
-            f'{counts} = pd.crosstab({data}["{op.row}"], {data}["{op.column}"]).reindex(',
             f"    index={_list(op.row_order)},",
             f"    columns={_list(op.column_order)},",
             "    fill_value=0,",
@@ -578,6 +728,44 @@ class PythonGenerator(Generator):
             lines.append(f"ax.set_xlim({low}, {high})  # karşılaştırılan grafiklerde aynı yatay eksen")
         return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
 
+    def _line(self, op: LineChart) -> list[str]:
+        marker = ', marker="o"' if op.markers else ""
+        plot = f'ax.plot({op.frame}["{op.x}"], {op.frame}["{op.y}"]{marker}, color="{PALETTE[0]}"'
+        lines = ["fig, ax = plt.subplots(figsize=(8, 5))"]
+        # Başvuru çizgisi varsa açıklama (legend) gerekir; seri de adıyla açıklamada yer alır.
+        lines += [plot + ",", f"        label={text(op.y_label)})"] if op.references else [plot + ")"]
+        for index, (name, label) in enumerate(op.references):
+            color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
+            style = ("--", ":", "-.")[index % 3]
+            lines.append(f'ax.axhline({name}, color="{color}", linestyle="{style}", linewidth=2, label={text(label)})')
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
+
+    def _box_plot(self, op: BoxPlot) -> list[str]:
+        series = [f'    ({text(label)}, {frame}["{variable}"]),' for frame, variable, label in op.series]
+        return [
+            "# Kutu: Q1'den Q3'e; çizgi: medyan; bıyıklar: sınırların içindeki en uç gözlemler; noktalar: aykırı",
+            "seriler = [",
+            *series,
+            "]",
+            "fig, ax = plt.subplots(figsize=(8, 1.6 + 1.1 * len(seriler)))",
+            "for y, (etiket, degerler) in enumerate(seriler, start=1):",
+            "    k = kutu_ozeti(degerler)",
+            f'    ax.add_patch(plt.Rectangle((k["q1"], y - 0.25), k["iqr"], 0.5, facecolor="{PALETTE[0]}33",',
+            f'                               edgecolor="{PALETTE[0]}", linewidth=2))',
+            f'    ax.plot([k["medyan"], k["medyan"]], [y - 0.25, y + 0.25], color="{PALETTE[1]}", linewidth=3)',
+            '    ax.plot([k["alt_biyik"], k["q1"]], [y, y], color="black")  # sol bıyık',
+            '    ax.plot([k["q3"], k["ust_biyik"]], [y, y], color="black")  # sağ bıyık',
+            '    for uc in (k["alt_biyik"], k["ust_biyik"]):',
+            '        ax.plot([uc, uc], [y - 0.12, y + 0.12], color="black")',
+            "    x = np.asarray(degerler, dtype=float)",
+            '    aykiri = x[(x < k["alt_sinir"]) | (x > k["ust_sinir"])]',
+            f'    ax.scatter(aykiri, [y] * len(aykiri), color="{PALETTE[1]}", s=45, zorder=3)',
+            "ax.set_yticks(range(1, len(seriler) + 1), [etiket for etiket, _ in seriler])",
+            "ax.set_ylim(0.4, len(seriler) + 0.6)",
+            "ax.autoscale(axis=\"x\")",
+            *self._axes(op.x_label, op.y_label, op.title),
+        ]
+
     def _chart_table(self, table: str) -> str:
         rows, columns = self.totals.get(table, (False, False))
         drops = []
@@ -618,13 +806,16 @@ class PythonGenerator(Generator):
         frame = f"{table}.T" if op.series == "satir" else table
         stacked = ", stacked=True" if op.stacked else ""
         position = ', label_type="center", color="white"' if op.stacked else ", padding=2"
+        labels = [
+            "for kap in ax.containers:",
+            f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues]{position})",
+        ] if op.labels else []
         return [
             f"cizim = {frame}  # satırlar yatay eksende, sütunlar seriler",
             f"renkler = {_list(PALETTE)}[: cizim.shape[1]]",
             "fig, ax = plt.subplots(figsize=(8, 5))",
             f"cizim.plot.bar(ax=ax, rot=0{stacked}, color=renkler)",
-            "for kap in ax.containers:",
-            f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues]{position})",
+            *labels,
             *self._axes(op.x_label, op.y_label, op.title, legend="disarida" if op.stacked else True),
         ]
 
@@ -672,11 +863,11 @@ class PythonGenerator(Generator):
             )
         for index, (value, label) in enumerate(op.references):
             color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
+            position = value if isinstance(value, str) else E.format_number(value)
             lines.append(
-                f'ax.axvline({E.format_number(value)}, color="{color}", linestyle="--", linewidth=2, '
-                f"label={text(label)})"
+                f'ax.axvline({position}, color="{color}", linestyle="--", linewidth=2, label={text(label)})'
             )
-        return lines + self._axes(op.x_label, "Tekrar sayısı", op.title, legend=True)
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=True)
 
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [
@@ -695,7 +886,7 @@ class PythonGenerator(Generator):
         dialect = self.dialect("")
         lines.append("    sonuclar.append({")
         for name, expression in op.collect:
-            lines.append(f'        "{name}": {E.render(expression, dialect)},')
+            lines.append(f'        "{name}": {_render(expression, dialect)},')
         return lines + ["    })", f"{op.result} = pd.DataFrame(sonuclar)", f"print({op.result}.describe().round(3))"]
 
     # --- Notlarla karşılaştırma -----------------------------------------

@@ -21,8 +21,15 @@ TOPICS: tuple[TopicMetadata, ...] = (
         "konu04", 4, "Merkezi Eğilim ve Konum Ölçüleri", "Merkezi Eğilim ve Konum Ölçüleri",
         "Bir veri setinin merkezini hangi ölçü en iyi özetler ve bir gözlemin göreli konumu nasıl belirlenir?",
     ),
-    TopicMetadata("konu05", 5, "Değişkenlik, Dağılım ve İlişki", "Değişkenlik, Dağılım ve İlişki"),
-    TopicMetadata("konu06", 6, "Olasılığın Temelleri", "Olasılığın Temelleri"),
+    TopicMetadata(
+        "konu05", 5, "Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki", "Değişkenlik, Dağılım ve İlişki",
+        "Aynı merkeze sahip veri setleri nasıl ayırt edilir ve iki nicel değişkenin birlikte hareketi nasıl ölçülür?",
+    ),
+    TopicMetadata(
+        "konu06", 6, "Olasılığın Temelleri", "Olasılığın Temelleri",
+        "Belirsiz bir sonucun ne ölçüde mümkün olduğunu nasıl sayısallaştırırız ve olayların olasılıkları nasıl "
+        "birleşir?",
+    ),
     TopicMetadata(
         "konu07", 7, "Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi", "Koşullu Olasılık, Bağımsızlık ve Bayes",
     ),

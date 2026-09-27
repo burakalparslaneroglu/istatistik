@@ -47,9 +47,21 @@ REPRO_DESCRIPTIONS = {
     ),
 }
 
-STATISTICS = ("count", "sum", "mean", "median", "mode", "mode_freq", "prod", "min", "max", "value")
+STATISTICS = (
+    "count", "sum", "mean", "median", "mode", "mode_freq", "prod", "min", "max", "var", "std", "nunique", "value",
+)
 """``value``: koşulu sağlayan tek gözlemin değeri (ör. A mağazasının memnuniyeti). ``mode``: tek mod
-(birden fazla değer en yüksek frekansa sahipse hata); ``mode_freq``: modun frekansı; ``prod``: çarpım."""
+(birden fazla değer en yüksek frekansa sahipse hata); ``mode_freq``: modun frekansı; ``prod``: çarpım;
+``var`` ve ``std``: örneklem varyansı s² ve standart sapması s (payda n − 1); ``nunique``: farklı değer sayısı."""
+PAIR_STATISTICS = ("cov", "corr")
+"""İki değişkenli istatistikler: örneklem kovaryansı s_xy (payda n − 1) ve Pearson korelasyonu r."""
+DISTRIBUTIONS = ("normal", "uniform", "beta", "gamma")
+BOX_ROWS = (
+    "en_kucuk", "q1", "medyan", "q3", "en_buyuk", "iqr", "alt_sinir", "ust_sinir", "alt_biyik", "ust_biyik",
+    "aykiri_sayisi",
+)
+"""Kutu grafiği özetinin satırları: beş sayı özeti (çeyrekler ders kuralıyla), IQR, Q₁ − 1,5·IQR ve
+Q₃ + 1,5·IQR sınırları, sınırların içindeki en uç gözlemler (bıyık uçları) ve aykırı değer sayısı."""
 PERCENT_KINDS = (None, "satir", "sutun")
 CLASS_COLUMNS = (
     "orta_nokta", "frekans", "goreli", "yuzde", "kumulatif_frekans", "kumulatif_goreli", "kumulatif_yuzde",
@@ -106,6 +118,59 @@ class VariableTypes:
 
 
 @dataclass(frozen=True)
+class Outcomes:
+    """Çok aşamalı bir deneyin bütün sonuçları: aşamalardaki seçeneklerin bütün bileşimleri.
+
+    ``stages``: (sütun adı, seçenekler). Satırlar ağaç diyagramındaki sırayla gelir: ilk aşama en yavaş,
+    son aşama en hızlı değişir. Satır sayısı çarpım kuralıyla n₁·n₂·…·n_k'dir.
+    """
+
+    frame: str
+    stages: tuple[tuple[str, tuple[object, ...]], ...]
+    comment: str
+
+
+@dataclass(frozen=True)
+class Selections:
+    """``items`` içinden ``k`` öğenin bütün seçimleri, sözlük sırasıyla.
+
+    ``ordered=False``: sıra önemsiz, kombinasyonlar (C(N, k) satır); ``ordered=True``: sıra veya görev önemli,
+    permütasyonlar (P(N, k) satır). ``columns`` k sütunun adlarıdır (ör. başkan, raportör).
+    """
+
+    frame: str
+    items: tuple[str, ...]
+    k: int
+    ordered: bool
+    columns: tuple[str, ...]
+    comment: str
+
+
+@dataclass(frozen=True)
+class Event:
+    """Olay: örnek uzayın bir alt kümesi. ``column`` değeri ``values`` içinde olan satırlarda 1, diğerlerinde 0.
+
+    Satırlar örnek noktalar (ya da simülasyonda tek tek denemeler) olduğunda yeni sütun olayın gösterge
+    değişkenidir; olayın olasılığı bu göstergeyle seçilen örnek noktaların olasılıkları toplanarak bulunur.
+    """
+
+    frame: str
+    name: str
+    column: str
+    values: tuple[object, ...]
+    comment: str
+
+
+@dataclass(frozen=True)
+class ShowFrame:
+    """Bir veri çerçevesinin seçili sütunlarını gösterir (ör. örnek uzay ve olayların gösterge sütunları)."""
+
+    frame: str
+    columns: tuple[str, ...]
+    comment: str
+
+
+@dataclass(frozen=True)
 class MapCodes:
     """Kategori etiketlerini sayı kodlarına çevirir (ör. Kaldı = 0, Geçti = 1)."""
 
@@ -155,7 +220,8 @@ class NewSample:
 
 @dataclass(frozen=True)
 class Draw:
-    """Sayısal rastgele değişken: normal(ortalama, std. sapma), uniform(alt, üst) veya beta(a, b)."""
+    """Sayısal rastgele değişken: normal(ortalama, std. sapma), uniform(alt, üst), beta(a, b) veya
+    gamma(biçim, ölçek)."""
 
     frame: str
     name: str
@@ -220,6 +286,19 @@ class Statistic:
 
 
 @dataclass(frozen=True)
+class PairStatistic:
+    """İki sayısal değişkenin örneklem kovaryansı (``cov``: payda n − 1) ya da Pearson korelasyonu (``corr``)."""
+
+    frame: str
+    x: str
+    y: str
+    stat: str
+    name: str
+    comment: str
+    decimals: int = 4
+
+
+@dataclass(frozen=True)
 class Scalar:
     """Skalerlerden (``E.ref``) ve sabitlerden hesaplanan tek sayı.
 
@@ -276,6 +355,8 @@ class CrossTab:
     ``percent``: None sayılar; ``satir`` satır yüzdeleri (her satır 100'e toplanır); ``sutun`` sütun
     yüzdeleri. ``margins``: sayı tablosunda ``Toplam`` satırı ve sütunu; satır yüzdelerinde ``Toplam``
     sütunu, sütun yüzdelerinde ``Toplam`` satırı. ``where`` verilirse yalnız o alt gruptaki gözlemler.
+    ``weights`` verilirse hücreler gözlem sayısı değil o sütunun toplamıdır (ör. ortak olasılık tablosu:
+    her örnek noktanın olasılığı kendi hücresine yazılır); yalnız ``percent=None`` ile kullanılır.
     """
 
     frame: str
@@ -288,6 +369,32 @@ class CrossTab:
     margins: bool = False
     where: tuple[str, object] | None = None
     decimals: int = 1
+    weights: str | None = None
+
+
+@dataclass(frozen=True)
+class JoinColumns:
+    """Aynı satır adlarına sahip tabloların sütunlarını tek tabloda yan yana toplar.
+
+    ``columns``: (yeni sütun adı, tablo, sütun). Satırlar ilk tablonun sırasıyladır.
+    """
+
+    result: str
+    columns: tuple[tuple[str, str, str], ...]
+    decimals: int = 3
+    percent: bool = False
+
+
+@dataclass(frozen=True)
+class BoxSummary:
+    """Kutu grafiği özeti (``BOX_ROWS``): her seri için bir sütun.
+
+    ``series``: (veri çerçevesi, değişken, etiket). Çeyrekler ders kuralıyla (L_p = (p/100)(n + 1)); bıyıklar
+    Q₁ − 1,5·IQR ve Q₃ + 1,5·IQR sınırlarının içindeki en küçük ve en büyük gözleme kadar uzanır.
+    """
+
+    series: tuple[tuple[str, str, str], ...]
+    result: str
 
 
 @dataclass(frozen=True)
@@ -377,7 +484,8 @@ class GroupedBarChart:
     """Çapraz tablodan çok serili sütun grafiği: yan yana veya yığılmış (yüzde 100).
 
     ``series="satir"``: her tablo satırı bir seri, sütunlar yatay eksende; ``"sutun"``: tersi.
-    ``Toplam`` satırı ve sütunu çizilmez.
+    ``Toplam`` satırı ve sütunu çizilmez. ``labels=False``: çok sayıda sütunda değer etiketleri yazılmaz (değerler
+    tabloda gösterilir).
     """
 
     table: str
@@ -387,6 +495,7 @@ class GroupedBarChart:
     series: str = "satir"
     stacked: bool = False
     decimals: int = 0
+    labels: bool = True
 
 
 @dataclass(frozen=True)
@@ -420,7 +529,25 @@ class PieChart:
 
 @dataclass(frozen=True)
 class LineChart:
-    """Bir veri çerçevesinde iki değişkenin çizgi grafiği (ör. zaman serisi)."""
+    """Bir veri çerçevesinde iki değişkenin çizgi grafiği (ör. zaman serisi).
+
+    ``references``: (skaler adı, etiket) yatay çizgileri (ör. gerçek olasılık). ``markers``: noktalar
+    işaretlenir; uzun serilerde (ör. birikimli oran) yalnız çizgi.
+    """
+
+    frame: str
+    x: str
+    y: str
+    x_label: str
+    y_label: str
+    title: str
+    references: tuple[tuple[str, str], ...] = ()
+    markers: bool = True
+
+
+@dataclass(frozen=True)
+class ScatterPlot:
+    """Serpilme diyagramı: her gözlem bir (x, y) noktası."""
 
     frame: str
     x: str
@@ -431,10 +558,27 @@ class LineChart:
 
 
 @dataclass(frozen=True)
-class Histogram:
-    """Monte Carlo sonuç tablosundaki sütunların histogramı; ``[lower, upper]`` aralığında ``bins`` kutu.
+class BoxPlot:
+    """Yatay kutu grafiği; ``series`` ve kurallar ``BoxSummary`` ile aynıdır.
 
-    ``references``: (değer, etiket) dikey çizgileri (ör. gerçek anakütle değeri).
+    Kutu Q₁'den Q₃'e, kutu içindeki çizgi medyandır; bıyıklar sınırların içindeki en uç gözlemlere uzanır,
+    sınırların dışındaki gözlemler (aykırı değer adayları) ayrı noktalardır.
+    """
+
+    series: tuple[tuple[str, str, str], ...]
+    x_label: str
+    y_label: str
+    title: str
+
+
+@dataclass(frozen=True)
+class Histogram:
+    """Monte Carlo sonuç tablosundaki ya da bir veri çerçevesindeki sütunların histogramı; ``[lower, upper]``
+    aralığında ``bins`` kutu.
+
+    ``references``: (değer, etiket) dikey çizgileri (ör. gerçek anakütle değeri). Değer bir sayı ya da daha önce
+    hesaplanmış bir skalerin adıdır (ör. örneklemden bulunan x̄ + 2s). ``y_label``: Monte Carlo tablosunda tekrar
+    sayısı, veri çerçevesinde gözlem sayısı.
     """
 
     table: str
@@ -444,7 +588,8 @@ class Histogram:
     upper: float
     title: str
     x_label: str
-    references: tuple[tuple[float, str], ...] = ()
+    references: tuple[tuple[float | str, str], ...] = ()
+    y_label: str = "Tekrar sayısı"
 
 
 @dataclass(frozen=True)
@@ -501,7 +646,11 @@ class MonteCarlo:
 Operation = Union[
     InlineData,
     FromCounts,
+    Outcomes,
+    Selections,
     VariableTypes,
+    Event,
+    ShowFrame,
     MapCodes,
     Groups,
     Derive,
@@ -511,11 +660,14 @@ Operation = Union[
     Shape,
     Count,
     Statistic,
+    PairStatistic,
     Scalar,
     ScalarTable,
     GroupSummary,
     FrequencyTable,
     CrossTab,
+    JoinColumns,
+    BoxSummary,
     ClassTable,
     StemLeaf,
     Percentile,
@@ -524,13 +676,18 @@ Operation = Union[
     CompareBarChart,
     PieChart,
     LineChart,
+    ScatterPlot,
+    BoxPlot,
     Histogram,
     ClassHistogram,
     DotPlot,
     MonteCarlo,
 ]
 
-CHARTS = (BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, Histogram, ClassHistogram, DotPlot)
+CHARTS = (
+    BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
+    DotPlot,
+)
 
 
 # --- Notlarla karşılaştırma -------------------------------------------------

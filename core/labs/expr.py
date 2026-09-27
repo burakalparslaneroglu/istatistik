@@ -7,6 +7,7 @@ Böylece iki dildeki kod ile uygulamanın hesabı tek kaynaktan gelir.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable, Union
 
@@ -54,9 +55,11 @@ COMPARISONS = {"le": "<=", "lt": "<", "ge": ">=", "gt": ">", "eq": "==", "ne": "
 """Karşılaştırma fonksiyonları: koşul sağlanırsa 1, değilse 0 (gösterge değişkeni)."""
 FUNCTIONS = (
     "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", "norminv",
-    "cumprod", *COMPARISONS,
+    "cumprod", "cummean", "seq", "factorial", "comb", "perm", *COMPARISONS,
 )
-_BINARY_FUNCTIONS = ("maximum", "minimum", *COMPARISONS)
+_BINARY_FUNCTIONS = ("maximum", "minimum", "comb", "perm", *COMPARISONS)
+COUNTING_FUNCTIONS = ("factorial", "comb", "perm")
+"""Sayma fonksiyonları tam sayı ister; Python'da ``math`` modülüyle, R'de ``factorial``/``choose`` ile yazılır."""
 _PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}
 _ATOM = 4
 
@@ -153,6 +156,36 @@ def cumprod(a) -> Call:
     """Birikimli çarpım: bir değişkenin ilk gözlemden o gözleme kadar değerlerinin çarpımı."""
 
     return Call("cumprod", (_wrap(a),))
+
+
+def cummean(a) -> Call:
+    """Birikimli ortalama: k. değer ilk k gözlemin ortalamasıdır (ör. birikimli göreli frekans)."""
+
+    return Call("cummean", (_wrap(a),))
+
+
+def seq(a) -> Call:
+    """Sıra numarası 1, 2, …, n (``a`` yalnız uzunluk için kullanılan bir değişkendir)."""
+
+    return Call("seq", (_wrap(a),))
+
+
+def factorial(a) -> Call:
+    """N! = N(N − 1)⋯2·1; 0! = 1."""
+
+    return Call("factorial", (_wrap(a),))
+
+
+def comb(a, b) -> Call:
+    """Kombinasyon C(N, n) = N! / (n!(N − n)!): sıra önemsiz seçimlerin sayısı."""
+
+    return Call("comb", (_wrap(a), _wrap(b)))
+
+
+def perm(a, b) -> Call:
+    """Permütasyon P(N, n) = N! / (N − n)!: sıralı seçimlerin sayısı."""
+
+    return Call("perm", (_wrap(a), _wrap(b)))
 
 
 def compare(name: str, a, b) -> Call:
@@ -289,6 +322,16 @@ def evaluate(
             return stats.norm.ppf(values[0])
         if expr.fn == "cumprod":
             return np.cumprod(values[0])
+        if expr.fn == "cummean":
+            return np.cumsum(values[0]) / np.arange(1, len(values[0]) + 1)
+        if expr.fn == "seq":
+            return np.arange(1, len(values[0]) + 1).astype(float)
+        if expr.fn == "factorial":
+            return float(math.factorial(int(values[0])))
+        if expr.fn == "comb":
+            return float(math.comb(int(values[0]), int(values[1])))
+        if expr.fn == "perm":
+            return float(math.perm(int(values[0]), int(values[1])))
         if expr.fn in COMPARISONS:
             left, right = np.asarray(values[0]), np.asarray(values[1])
             outcome = {

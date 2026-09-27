@@ -13,14 +13,14 @@ sezgi kurar ve kavramları sınar.
 - `topics/`: Streamlit bileşenleri ve öğrenciye gösterilen metin.
 - `tests/`: sözleşme, sayısal doğruluk, üretilen kod ve AppTest denetimleri.
 
-## Yeni yapı (Konu 1–4)
+## Yeni yapı (Konu 1–6)
 
 | Dosya | Görev |
 |---|---|
 | `core/topic_registry.py`, `core/types.py` | 12 konunun başlığı (ders notlarındaki bölüm adı), kısa adı ve yönlendirici sorusu |
 | `core/labs/spec.py` | Uygulama tanım şeması: işlemler, notlardaki sayılar (`Check`), tekrarlanabilirlik sınıfı |
 | `core/labs/expr.py` | Türetilmiş değişken ve skalerler için küçük ifade dili; pandas'ta değerlendirilir, iki dile çevrilir |
-| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi), sayımdan gözlem verisi, kategorik çekiliş, sınıf tablosu, gövde–yaprak, yüzdelik |
+| `core/labs/tables.py` | Frekans tablosu, çapraz tablo (sayı, satır ve sütun yüzdesi, ağırlıklı toplam), sayımdan gözlem verisi, çok aşamalı deneyin sonuçları, kombinasyon ve permütasyon listeleri, kategorik çekiliş, sınıf tablosu, gövde–yaprak, yüzdelik, kutu grafiği özeti |
 | `core/labs/runner.py` | Tanımı çalıştırır ve notlarla karşılaştırır |
 | `core/labs/konuNN.py`, `core/labs/registry.py` | Konu uygulamaları |
 | `core/labs/sezgi.py`, `core/labs/sezgi_konuNN.py` | Sezgi deneylerinin şeması ve konu deneyleri |
@@ -30,10 +30,9 @@ sezgi kurar ve kavramları sınar.
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
-Eski yapıdaki konular (5–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
+Eski yapıdaki konular (7–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
 `core/ui_components.render_plotly`'yi kullanır. Bir konu yeni yapıya taşındığında eski modülü ve testleri
-aynı blokta kaldırılır. Konu 5'in eski modülü çeyrekleri `core.labs.tables.percentile` ile hesaplar (Konu 4'ün
-ders kuralı; eski `core/topic04_logic.py` kaldırıldı).
+aynı blokta kaldırılır.
 
 ## Uygulama akışı
 
@@ -74,10 +73,38 @@ tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde
 - `Statistic`: `median`, `mode` (tek mod; birden fazla mod hata verir), `mode_freq` ve `prod` (geometrik ortalama
   için çarpım) eklendi.
 
+### Yayılım, kutu grafiği ve iki değişken (Konu 5)
+
+- `Statistic`: `var` ve `std` örneklem ölçüleridir (payda n − 1; pandas `var()`/`std()`, R `var()`/`sd()`);
+  `nunique` farklı değer sayısıdır. `PairStatistic`: örneklem kovaryansı (`cov`) ve Pearson korelasyonu (`corr`).
+- `BoxSummary` ve `BoxPlot`: çeyrekler ders kuralıyla (`yuzdelik`); bıyıklar Q₁ − 1,5·IQR ve Q₃ + 1,5·IQR
+  sınırlarının içindeki en uç gözlemlere uzanır, dışındaki gözlemler ayrı noktadır. matplotlib `boxplot` ve R
+  `boxplot()` çeyrekleri kendi kurallarıyla hesapladığı için kullanılmaz: Python kutuyu `kutu_ozeti`nden
+  dikdörtgen ve çizgilerle, R `bxp()` ile hazır özetten, uygulama Plotly `go.Box` ile hazır çeyreklerden çizer.
+- `ScatterPlot`: serpilme diyagramı. `LineChart`: `references` yatay başvuru çizgileri (ör. gerçek olasılık),
+  `markers=False` uzun seriler için yalnız çizgi.
+- `JoinColumns`: aynı satır adlı tabloların sütunlarını yan yana toplar (ör. gözlenen oran, Chebyshev alt sınırı,
+  ampirik kural). `Histogram` bir veri çerçevesini de çizebilir; başvuru çizgisi sayı ya da skaler adıdır.
+
+### Sayma ve olaylar (Konu 6)
+
+- `Outcomes`: çok aşamalı deneyin bütün sonuçları, ağaç diyagramındaki sırayla (ilk aşama en yavaş değişir;
+  Python `itertools.product`, R `expand.grid` aşamalar ters sırayla verilip sütunlar yeniden dizilerek).
+- `Selections`: kombinasyonlar (Python `itertools.combinations`, R `combn`) ve permütasyonlar (Python
+  `itertools.permutations`, R'de `sirali_secimler` yardımcısı) sözlük sırasıyla.
+- `Event`: olay, örnek uzayın alt kümesidir; olaydaki satırlarda 1, diğerlerinde 0 olan gösterge sütunu (Python
+  `isin`, R `%in%`). Birleşim göstergelerin büyüğü (`maximum`), kesişim çarpımıdır. Olasılık, olaydaki örnek
+  noktaların olasılıklarının toplamıdır (`Statistic(..., "sum", where=(olay, 1))`).
+- `CrossTab(weights=...)`: hücreler gözlem sayısı değil bir sütunun toplamıdır (ortak olasılık tablosu; Python
+  `pd.crosstab(values=..., aggfunc="sum")`, R `xtabs(w ~ satır + sütun)`).
+- `ShowFrame`: bir veri çerçevesinin seçili sütunlarını gösterir (ör. örnek noktalar ve olay göstergeleri).
+- İfade dilinde `cummean` (birikimli ortalama), `seq` (1, …, n), `factorial`, `comb`, `perm` vardır; R'de
+  `choose` ve `factorial` ile yazılır.
+
 ## Sezgi deneyleri
 
 Bir deney (`SimExperiment`), kaydırıcı değerlerinden işlem listesi üreten bir tanımdır. Deneyde tek bir
-`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tekdüze, beta) ve `DrawCategory` çekilişleri
+`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tekdüze, beta, gamma) ve `DrawCategory` çekilişleri
 işlem sırasıyla ondan yapılır. Kategorik çekiliş, her gözlem için u ~ Tekdüze(0, 1) çekip birikimli olasılığı
 u'yu ilk aşan kategoriyi seçer (Python `np.searchsorted(..., side="right")`, R `findInterval(u, esik) + 1`; son eşik
 yuvarlama hatasına karşı tam 1'dir). Üretilen Python kodu aynı sırayla çektiği için uygulamadaki sayıların
@@ -113,7 +140,8 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
 - `tests/test_all_quizzes.py`: soru sayısı ve türleri, kavram tekilliği, bölüm kapsamı, cevap anahtarı dengesi.
 - `tests/test_topic_contracts.py`: konu sırası, render fonksiyonları, yeni yapıya taşınan konuların sözleşmesi.
 - `tests/test_app_smoke.py`: AppTest ile kabuk, adımlar, deneyler, soru kontrolü, konu ve kod dili geçişi.
-- `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`: notlarla veri uyumu, yüzdelik kuralının
-  Hyndman–Fan tip 6 ile özdeşliği ve deneylerin istatistiksel doğruluğu.
+- `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`, `tests/test_konu05_06_content.py`:
+  notlarla veri uyumu, yüzdelik kuralının Hyndman–Fan tip 6 ile özdeşliği, Konu 6 Deney 1'in notlardaki
+  Şekil 6.6'yı birebir üretmesi ve deneylerin istatistiksel doğruluğu.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.
