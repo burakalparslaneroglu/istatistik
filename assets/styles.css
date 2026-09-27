@@ -54,3 +54,59 @@
     min-height: auto;
   }
 }
+
+/* Yeni mimariye taşınan konuların başlığı */
+.topic-band {
+  background: var(--course-primary);
+  border-left: 6px solid #107c89;
+  border-radius: 6px;
+  color: #ffffff;
+  margin: 0.4rem 0 1.1rem;
+  padding: 1rem 1.2rem 1.1rem;
+}
+
+.topic-band .topic-number {
+  color: #cfe4f2;
+  font-size: calc(0.78rem * var(--course-text-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.topic-band h2 {
+  color: #ffffff;
+  margin: 0;
+  padding: 0;
+}
+
+.guiding-question {
+  border-left: 4px solid #2f9e6b;
+  margin: 0.2rem 0 1.1rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+}
+
+.guiding-question .label {
+  color: #475569;
+  font-size: calc(0.78rem * var(--course-text-scale));
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.guiding-question p {
+  color: var(--course-primary);
+  font-size: calc(1.08rem * var(--course-text-scale));
+  margin: 0.25rem 0 0;
+}
+
+@media (max-width: 700px) {
+  .topic-band {
+    padding: 0.9rem 1rem;
+  }
+}
+
+/* Metin ölçeği paragrafları büyütür; metrik değeri kendi büyük yazı boyutunu korur. */
+.stApp [data-testid="stMetricValue"] p {
+  font-size: calc(1.9rem * var(--course-text-scale));
+  line-height: 1.25;
+}

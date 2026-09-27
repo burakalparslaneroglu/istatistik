@@ -1,0 +1,551 @@
+"""Uygulama tanımından Python (pandas + matplotlib) kodu üretir.
+
+Üretilen kod, uygulamanın hesabıyla aynı işlem sırasını izler; sayılar bit düzeyinde aynıdır.
+"""
+
+from __future__ import annotations
+
+from core.codegen.base import (
+    PALETTE,
+    REFERENCE_COLORS,
+    Generator,
+    flatten,
+    functions_used,
+    text,
+    uses_charts,
+    wrapped,
+)
+from core.labs import expr as E
+from core.labs.spec import (
+    TOTAL,
+    BarChart,
+    CellTarget,
+    Check,
+    CompareBarChart,
+    Count,
+    CrossTab,
+    Derive,
+    Draw,
+    DrawCategory,
+    FrequencyTable,
+    FromCounts,
+    GroupedBarChart,
+    Groups,
+    GroupSummary,
+    Histogram,
+    InlineData,
+    LineChart,
+    MapCodes,
+    MonteCarlo,
+    NewSample,
+    Operation,
+    PieChart,
+    Scalar,
+    ScalarTable,
+    ScalarTarget,
+    Shape,
+    Statistic,
+    StatTarget,
+    TableTarget,
+    VariableTypes,
+)
+
+_STAT = {"count": "count", "sum": "sum", "mean": "mean", "min": "min", "max": "max", "value": "item"}
+_FUNCTIONS = {
+    "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
+    "minimum": "np.minimum", "round": "np.rint", "floor": "np.floor",
+    "normcdf": "stats.norm.cdf", "normpdf": "stats.norm.pdf",
+    **{name: f"np.where({{0}} {symbol} {{1}}, 1.0, 0.0)" for name, symbol in E.COMPARISONS.items()},
+}
+
+_NUMBER_TEXT = [
+    "def sayi_metni(deger, basamak=0, yuzde=False):",
+    '    """Grafik etiketleri için Türkçe sayı: ondalık virgül, yüzde işareti sayıdan önce."""',
+    '    metin = f"{deger:.{basamak}f}".replace(".", ",")',
+    '    return "%" + metin if yuzde else metin',
+]
+
+
+def _list(values) -> str:
+    return "[" + ", ".join(text(value) for value in values) + "]"
+
+
+def _quote(value: str) -> str:
+    """Çift tırnaklı dizge içinde düz metin."""
+
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _fstring(value: str) -> str:
+    """f-dizgesi içinde düz metin: tırnak, ters bölü ve süslü parantez kaçırılır."""
+
+    return _quote(value).replace("{", "{{").replace("}", "}}")
+
+
+def _needs_numpy(operations) -> bool:
+    """numpy yalnız rastgele çekiliş, grup etiketi, histogram veya ifade fonksiyonu varsa gerekir."""
+
+    numpy_ops = (Groups, NewSample, Draw, DrawCategory, Histogram, MonteCarlo)
+    if any(isinstance(op, numpy_ops) for op in flatten(operations)):
+        return True
+    return bool(functions_used(operations) - {"normcdf", "normpdf"})
+
+
+def _where(frame: str, where) -> str:
+    column, value = where
+    return f'{frame}["{column}"] == {text(value)}'
+
+
+class PythonGenerator(Generator):
+    language = "Python"
+    comment = "#"
+
+    def dialect(self, frame: str) -> E.Dialect:
+        return E.Dialect(variable=lambda name: f'{frame}["{name}"]', functions=_FUNCTIONS, power="**")
+
+    # --- Başlık ve yardımcılar ------------------------------------------
+    def imports(self, operations: tuple[Operation, ...], *, script: bool = False) -> list[str]:
+        lines = ["import sys", ""] if script else []
+        if uses_charts(operations):
+            lines.append("import matplotlib.pyplot as plt")
+        if _needs_numpy(operations):
+            lines.append("import numpy as np")
+        lines.append("import pandas as pd")
+        if functions_used(operations) & {"normcdf", "normpdf"}:
+            lines.append("from scipy import stats")
+        lines.append("")
+        return lines
+
+    def output_setup(self) -> list[str]:
+        return [
+            "# Windows'ta çıktı bir dosyaya ya da başka bir programa yönlendirildiğinde Python yerel kod",
+            "# sayfasını (ör. cp1254) kullanır ve bazı karakterleri yazamaz; çıktı UTF-8 olsun.",
+            'if hasattr(sys.stdout, "reconfigure"):',
+            '    sys.stdout.reconfigure(encoding="utf-8")',
+            "",
+        ]
+
+    def helpers(self, operations: tuple[Operation, ...], *, with_checks: bool) -> list[str]:
+        lines: list[str] = [""]  # üst düzey fonksiyonlardan önce iki boş satır (PEP 8)
+        if any(isinstance(op, (BarChart, GroupedBarChart, CompareBarChart)) for op in flatten(operations)):
+            lines += _NUMBER_TEXT + ["", ""]
+        if with_checks:
+            lines += [
+                "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
+                '    """Hesaplanan değeri ders notlarındaki basılı değerle karşılaştırır."""',
+                "    tolerans = 0.5 * 10 ** (-ondalik) + 1e-12",
+                '    durum = "OK  " if abs(deger - beklenen) <= tolerans else "HATA"',
+                '    print(f"  {durum} {etiket}: {deger:.{ondalik}f}  (notlar: {beklenen:.{ondalik}f})")',
+                '    assert abs(deger - beklenen) <= tolerans, f"{etiket} notlarla uyuşmuyor."',
+                "",
+                "",
+            ]
+        return lines if len(lines) > 1 else []
+
+    # --- İşlemler --------------------------------------------------------
+    def operation(self, op: Operation) -> list[str]:
+        lines = self._operation(op)
+        if self.quiet:
+            lines = [line for line in lines if not line.lstrip().startswith("print(")]
+        return lines
+
+    def _operation(self, op: Operation) -> list[str]:  # noqa: C901 - tek dağıtıcı, işlem türü başına bir blok
+        if isinstance(op, InlineData):
+            return self._inline(op)
+        if isinstance(op, FromCounts):
+            return self._from_counts(op)
+        if isinstance(op, VariableTypes):
+            rows = [f'    ({text(v)}, {text(k)}, {text(d)}),' for v, k, d in op.rows]
+            return [
+                "# Yazılımın saklama türü: sayı (int64/float64) ya da metin (object)",
+                f"print({op.frame}.dtypes)",
+                "# İstatistiksel tür yazılımdan değil, değişkenin anlamından gelir",
+                f"{op.result} = pd.DataFrame(",
+                "    [",
+                *[f"    {row}" for row in rows],
+                "    ],",
+                '    columns=["degisken", "tur", "ayrinti"],',
+                ').set_index("degisken")',
+                f"print({op.result})",
+            ]
+        if isinstance(op, MapCodes):
+            pairs = ", ".join(f"{text(label)}: {text(code)}" for label, code in op.mapping)
+            return [
+                f"# {op.comment}",
+                f'{op.frame}["{op.name}"] = {op.frame}["{op.source}"].map({{{pairs}}})',
+                f'print({op.frame}[["{op.source}", "{op.name}"]].head(8))',
+            ]
+        if isinstance(op, Groups):
+            return [
+                f"# {op.comment}",
+                f'{op.frame}["{op.name}"] = np.repeat({_list(op.labels)}, {_list(op.sizes)})',
+            ]
+        if isinstance(op, Derive):
+            rhs = E.render(op.expr, self.dialect(op.frame))
+            return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {rhs}']
+        if isinstance(op, NewSample):
+            frame = f'{op.frame} = pd.DataFrame({{"id": np.arange(1, {op.nobs} + 1)}})'
+            if op.seed is None:
+                return [frame]
+            return [
+                "# Sabit tohum: betik her çalıştırmada aynı veriyi üretir",
+                f"rng = np.random.default_rng({op.seed})",
+                frame,
+            ]
+        if isinstance(op, Draw):
+            a, b = E.format_number(op.first), E.format_number(op.second)
+            call = (f"rng.normal({a}, {b}, size=len({op.frame}))" if op.distribution == "normal"
+                    else f"rng.uniform({a}, {b}, size=len({op.frame}))")
+            return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
+        if isinstance(op, DrawCategory):
+            return self._draw_category(op)
+        if isinstance(op, Shape):
+            columns = f".drop(columns={_list(op.exclude)})" if op.exclude else ""
+            note = "  # kimlik sütunu değişken sayılmaz" if op.exclude else ""
+            return [
+                f"{op.observations} = len({op.frame})  # gözlem sayısı",
+                f"{op.variables} = {op.frame}{columns}.shape[1]{note}",
+                f'print("Gözlem sayısı:", {op.observations}, "| Değişken sayısı:", {op.variables})',
+            ]
+        if isinstance(op, Count):
+            return [
+                f"# {op.comment}",
+                f'{op.name} = int(({op.frame}["{op.column}"] == {text(op.value)}).sum())',
+                f'print("{_quote(op.comment)}:", {op.name})',
+            ]
+        if isinstance(op, Statistic):
+            source = (f'{op.frame}["{op.variable}"]' if op.where is None
+                      else f'{op.frame}.loc[{_where(op.frame, op.where)}, "{op.variable}"]')
+            return [
+                f"# {op.comment}",
+                f"{op.name} = {source}.{_STAT[op.stat]}()",
+                f'print(f"{_fstring(op.comment)}: {{{op.name}:.{op.decimals}f}}")',
+            ]
+        if isinstance(op, Scalar):
+            rhs = E.render(op.expr, self.dialect(""))
+            shown = f"%{{{op.name}:.{op.decimals}f}}" if op.percent else f"{{{op.name}:.{op.decimals}f}}"
+            return [f"# {op.comment}", f"{op.name} = {rhs}", f'print(f"{_fstring(op.comment)}: {shown}")']
+        if isinstance(op, ScalarTable):
+            dialect = self.dialect("")
+            rows = [f"    {text(label)}: {E.render(expression, dialect)}," for label, expression in op.rows]
+            return [
+                f"{op.result} = pd.DataFrame({{\"deger\": {{", *rows, "}})",
+                f"print({op.result}.round({op.decimals}))",
+            ]
+        if isinstance(op, GroupSummary):
+            lines = [f'{op.result} = {op.frame}.groupby("{op.by}").agg(']
+            for name, variable, stat in op.columns:
+                lines.append(f'    {name}=("{variable}", "{stat}"),')
+            lines += [f").reindex({_list(op.order)})", f"print({op.result}.round(4))"]
+            return lines
+        if isinstance(op, FrequencyTable):
+            return self._frequency(op)
+        if isinstance(op, CrossTab):
+            return self._crosstab(op)
+        if isinstance(op, BarChart):
+            return self._bar(op)
+        if isinstance(op, GroupedBarChart):
+            return self._grouped(op)
+        if isinstance(op, CompareBarChart):
+            return self._compare(op)
+        if isinstance(op, PieChart):
+            return self._pie(op)
+        if isinstance(op, LineChart):
+            return [
+                "fig, ax = plt.subplots(figsize=(8, 5))",
+                f'ax.plot({op.frame}["{op.x}"], {op.frame}["{op.y}"], marker="o", color="{PALETTE[0]}")',
+                *self._axes(op.x_label, op.y_label, op.title),
+            ]
+        if isinstance(op, Histogram):
+            return self._histogram(op)
+        if isinstance(op, MonteCarlo):
+            return self._monte_carlo(op)
+        raise TypeError(f"Python üreticisi bu işlemi tanımıyor: {type(op).__name__}")
+
+    @staticmethod
+    def _axes(x_label: str, y_label: str, title: str, legend: bool | str = False) -> list[str]:
+        lines = [
+            f'ax.set_xlabel("{_quote(x_label)}")',
+            f'ax.set_ylabel("{_quote(y_label)}")',
+            f'ax.set_title("{_quote(title)}")',
+        ]
+        if legend == "disarida":
+            lines.append('ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1))  # açıklama sütunların dışında')
+        elif legend:
+            lines.append("ax.legend()")
+        return lines + ["plt.tight_layout()", "plt.show()"]
+
+    def _inline(self, op: InlineData) -> list[str]:
+        lines = [f"# {op.comment}"]
+        if op.layout and len(op.columns) == 1:
+            name = f"{op.frame}_ham"
+            items = [text(row[0]) for row in op.rows]
+            lines += wrapped(f"{name} = [", items, "]", per_line=op.layout)
+            lines += [f'{op.frame} = pd.DataFrame({{"{op.columns[0]}": {name}}})']
+        else:
+            lines.append(f"{op.frame} = pd.DataFrame({{")
+            for position, column in enumerate(op.columns):
+                values = [text(row[position]) for row in op.rows]
+                lines += wrapped(f'    "{column}": [', values, "],")
+            lines.append("})")
+        lines.append(f"print({op.frame})" if len(op.rows) <= 12 else f"print({op.frame}.head())  # ilk beş gözlem")
+        return lines
+
+    def _from_counts(self, op: FromCounts) -> list[str]:
+        name = f"{op.frame}_sayim"
+        rows = ["        (" + ", ".join(text(value) for value in row) + ")," for row in op.rows]
+        columns = _list((*op.columns, "sayi"))
+        return [
+            f"# {op.comment}",
+            f"{name} = pd.DataFrame(",
+            "    [",
+            *rows,
+            "    ],",
+            f"    columns={columns},",
+            ")",
+            '# Her satır "sayi" kez tekrarlanır: bir satır = bir gözlem',
+            f'satirlar = {name}.index.repeat({name}["sayi"])',
+            f"{op.frame} = {name}.loc[satirlar, {_list(op.columns)}].reset_index(drop=True)",
+            f"print(len({op.frame}))  # gözlem sayısı",
+        ]
+
+    def _draw_category(self, op: DrawCategory) -> list[str]:
+        categories = f"{op.name}_kategoriler"
+        lines = [
+            f"# {op.comment}",
+            "# u ~ Tekdüze(0, 1); kategori, birikimli olasılığı u'yu ilk aşan kategoridir",
+            f"u = rng.random(len({op.frame}))",
+            f"{categories} = np.array({_list(op.categories)})",
+        ]
+        if not op.by:
+            probs = op.probabilities[0][1]
+            return lines + [
+                f"esik = np.cumsum({_list(probs)})",
+                "esik[-1] = 1.0  # yuvarlama hatasına karşı son eşik tam 1",
+                f'{op.frame}["{op.name}"] = {categories}[np.searchsorted(esik, u, side="right")]',
+            ]
+        if len(op.by) == 1:
+            entries = [f"    {text(condition[0])}: {_list(probs)}," for condition, probs in op.probabilities]
+            selection = f'({op.frame}["{op.by[0]}"] == kosul).to_numpy()'
+        else:
+            entries = [
+                f"    ({', '.join(text(value) for value in condition)}): {_list(probs)},"
+                for condition, probs in op.probabilities
+            ]
+            selection = " & ".join(
+                f'({op.frame}["{column}"] == kosul[{index}]).to_numpy()' for index, column in enumerate(op.by)
+            )
+        return lines + [
+            f"{op.name}_olasilik = {{",
+            *entries,
+            "}",
+            f'{op.frame}["{op.name}"] = ""',
+            f"for kosul, olasilik in {op.name}_olasilik.items():",
+            f"    secili = {selection}",
+            "    esik = np.cumsum(olasilik)",
+            "    esik[-1] = 1.0",
+            f'    {op.frame}.loc[secili, "{op.name}"] = {categories}[np.searchsorted(esik, u[secili], side="right")]',
+        ]
+
+    def _frequency(self, op: FrequencyTable) -> list[str]:
+        order = f"{op.result}_sira"
+        lines = [
+            f"{order} = {_list(op.order)}",
+            f'sayilar = {op.frame}["{op.variable}"].value_counts()  # her kategorideki gözlem sayısı',
+            f'{op.result} = sayilar.reindex({order}, fill_value=0).to_frame("frekans")',
+        ]
+        if op.relative:
+            lines += [
+                f'{op.result}["goreli"] = {op.result}["frekans"] / {op.result}["frekans"].sum()  # r = f / n',
+                f'{op.result}["yuzde"] = 100 * {op.result}["goreli"]  # p = 100 r',
+            ]
+        if op.totals:
+            lines.append(f'{op.result}.loc["{TOTAL}"] = {op.result}.sum()')
+        lines.append(f"print({op.result}.round(3))")
+        return lines
+
+    def _crosstab(self, op: CrossTab) -> list[str]:
+        lines: list[str] = []
+        data = op.frame
+        if op.where is not None:
+            data = f"{op.result}_veri"
+            lines += [
+                f"# Yalnız {op.where[0]} = {op.where[1]} olan gözlemler",
+                f"{data} = {op.frame}[{_where(op.frame, op.where)}]",
+            ]
+        counts = op.result if op.percent is None else f"{op.result}_sayi"
+        lines += [
+            f'{counts} = pd.crosstab({data}["{op.row}"], {data}["{op.column}"]).reindex(',
+            f"    index={_list(op.row_order)},",
+            f"    columns={_list(op.column_order)},",
+            "    fill_value=0,",
+            ")",
+        ]
+        if op.percent is None:
+            if op.margins:
+                lines += [
+                    f'{op.result}.loc["{TOTAL}"] = {op.result}.sum()  # sütun toplamları',
+                    f'{op.result}["{TOTAL}"] = {op.result}.sum(axis=1)  # satır toplamları',
+                ]
+            return lines + [f"print({op.result})"]
+        if op.percent == "satir":
+            lines += [
+                "# Satır yüzdesi: payda satır toplamıdır",
+                f"{op.result} = {counts}.div({counts}.sum(axis=1), axis=0) * 100",
+            ]
+            if op.margins:
+                lines.append(f'{op.result}["{TOTAL}"] = {op.result}.sum(axis=1)')
+        else:
+            lines += [
+                "# Sütun yüzdesi: payda sütun toplamıdır",
+                f"{op.result} = {counts}.div({counts}.sum(axis=0), axis=1) * 100",
+            ]
+            if op.margins:
+                lines.append(f'{op.result}.loc["{TOTAL}"] = {op.result}.sum()')
+        return lines + [f"print({op.result}.round({op.decimals}))"]
+
+    def _chart_table(self, table: str) -> str:
+        rows, columns = self.totals.get(table, (False, False))
+        drops = []
+        if rows:
+            drops.append(f'index="{TOTAL}"')
+        if columns:
+            drops.append(f'columns="{TOTAL}"')
+        return f"{table}.drop({', '.join(drops)})" if drops else table
+
+    def _bar(self, op: BarChart) -> list[str]:
+        if op.x is None:
+            lines = [f'cizim = {self._chart_table(op.source)}["{op.y}"]']
+        else:
+            lines = [f'cizim = pd.Series({op.source}["{op.y}"].to_numpy(), index={op.source}["{op.x}"])']
+        if op.sort == "azalan":
+            lines.append('cizim = cizim.sort_values(ascending=False, kind="stable")  # yüksekten düşüğe')
+        labels = f"[sayi_metni(v, {op.decimals}{', yuzde=True' if op.percent else ''}) for v in cizim]"
+        lines.append("fig, ax = plt.subplots(figsize=(8, 5))")
+        if op.horizontal:
+            lines += [
+                f'cubuklar = ax.barh(cizim.index, cizim.values, color="{PALETTE[0]}")',
+                "ax.invert_yaxis()  # ilk kategori en üstte",
+                f"ax.bar_label(cubuklar, labels={labels}, padding=3)",
+            ]
+            if op.y_range is not None:
+                lines.append(f"ax.set_xlim({E.format_number(op.y_range[0])}, {E.format_number(op.y_range[1])})")
+            return lines + self._axes(op.y_label, op.x_label, op.title)
+        lines += [
+            f'cubuklar = ax.bar(cizim.index, cizim.values, color="{PALETTE[0]}")',
+            f"ax.bar_label(cubuklar, labels={labels}, padding=3)",
+        ]
+        if op.y_range is not None:
+            lines.append(f"ax.set_ylim({E.format_number(op.y_range[0])}, {E.format_number(op.y_range[1])})")
+        return lines + self._axes(op.x_label, op.y_label, op.title)
+
+    def _grouped(self, op: GroupedBarChart) -> list[str]:
+        table = self._chart_table(op.table)
+        frame = f"{table}.T" if op.series == "satir" else table
+        stacked = ", stacked=True" if op.stacked else ""
+        position = ', label_type="center", color="white"' if op.stacked else ", padding=2"
+        return [
+            f"cizim = {frame}  # satırlar yatay eksende, sütunlar seriler",
+            f"renkler = {_list(PALETTE)}[: cizim.shape[1]]",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            f"cizim.plot.bar(ax=ax, rot=0{stacked}, color=renkler)",
+            "for kap in ax.containers:",
+            f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues]{position})",
+            *self._axes(op.x_label, op.y_label, op.title, legend="disarida" if op.stacked else True),
+        ]
+
+    def _compare(self, op: CompareBarChart) -> list[str]:
+        items = [f'    {text(label)}: {name}["{op.column}"],' for label, name in op.tables]
+        return [
+            "# Her tablonun aynı sütunu yan yana; satırlar yatay eksende, sütunlar seriler",
+            "cizim = pd.DataFrame({",
+            *items,
+            "}).T",
+            f"renkler = {_list(PALETTE)}[: cizim.shape[1]]",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            "cizim.plot.bar(ax=ax, rot=0, color=renkler)",
+            "for kap in ax.containers:",
+            f"    ax.bar_label(kap, labels=[sayi_metni(v, {op.decimals}) for v in kap.datavalues], padding=2)",
+            *self._axes(op.x_label, op.y_label, op.title, legend=True),
+        ]
+
+    def _pie(self, op: PieChart) -> list[str]:
+        order = f"{op.result}_sira"
+        return [
+            f"{order} = {_list(op.order)}  # dilimlerin sırası",
+            f'{op.result} = {op.table}.loc[{order}, ["{op.column}"]]',
+            f'{op.result}["aci"] = 360 * {op.result}["{op.column}"]  # θ = 360° × r',
+            f"print({op.result}.round(3))",
+            "fig, ax = plt.subplots(figsize=(6, 6))",
+            f'ax.pie({op.result}["{op.column}"], labels={op.result}.index, startangle=0, counterclock=True,',
+            f"       colors={_list(PALETTE[:len(op.order)])},",
+            '       autopct=lambda p: "%" + f"{p:.1f}".replace(".", ","))',
+            f'ax.set_title("{_quote(op.title)}")',
+            "plt.show()",
+        ]
+
+    def _histogram(self, op: Histogram) -> list[str]:
+        lower, upper = E.format_number(op.lower), E.format_number(op.upper)
+        lines = [
+            f"# [{lower}, {upper}] aralığında {op.bins} eşit genişlikte kutu",
+            f"kutular = np.linspace({lower}, {upper}, {op.bins} + 1)",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+        ]
+        for index, (column, label) in enumerate(op.columns):
+            color = PALETTE[index % len(PALETTE)]
+            lines.append(
+                f'ax.hist({op.table}["{column}"], bins=kutular, alpha=0.55, color="{color}", label={text(label)})'
+            )
+        for index, (value, label) in enumerate(op.references):
+            color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
+            lines.append(
+                f'ax.axvline({E.format_number(value)}, color="{color}", linestyle="--", linewidth=2, '
+                f"label={text(label)})"
+            )
+        return lines + self._axes(op.x_label, "Tekrar sayısı", op.title, legend=True)
+
+    def _monte_carlo(self, op: MonteCarlo) -> list[str]:
+        lines = [
+            f"# {op.comment}",
+            f"# {op.reps} tekrar; rastgele sayı üreteci döngüden önce bir kez tohumlanır",
+            f"rng = np.random.default_rng({op.seed})",
+            "sonuclar = []",
+            f"for tekrar in range({op.reps}):",
+        ]
+        self.quiet = True
+        try:
+            for inner in op.body:
+                lines += [f"    {line}" if line else "" for line in self.operation(inner)]
+        finally:
+            self.quiet = False
+        dialect = self.dialect("")
+        lines.append("    sonuclar.append({")
+        for name, expression in op.collect:
+            lines.append(f'        "{name}": {E.render(expression, dialect)},')
+        return lines + ["    })", f"{op.result} = pd.DataFrame(sonuclar)", f"print({op.result}.describe().round(3))"]
+
+    # --- Notlarla karşılaştırma -----------------------------------------
+    def target(self, target) -> str:
+        if isinstance(target, StatTarget):
+            source = (f'{target.frame}["{target.variable}"]' if target.where is None
+                      else f'{target.frame}.loc[{_where(target.frame, target.where)}, "{target.variable}"]')
+            return f"{source}.{_STAT[target.stat]}()"
+        if isinstance(target, ScalarTarget):
+            return target.name
+        if isinstance(target, TableTarget):
+            return f"{target.table}.loc[{text(target.row)}, {text(target.column)}]"
+        if isinstance(target, CellTarget):
+            return f'{target.frame}["{target.column}"].iloc[{target.row - 1}]'
+        raise TypeError(f"Tanınmayan hedef: {type(target).__name__}")
+
+    def check_lines(self, checks: tuple[Check, ...]) -> list[str]:
+        lines = ['print("Notlarla karşılaştırma:")']
+        for check in checks:
+            expected = f"{check.expected:.{check.decimals}f}"
+            lines.append(
+                f'kontrol_et("{_quote(check.label)}", {self.target(check.target)}, {expected}, {check.decimals})'
+            )
+        return lines
+
+    def closing(self) -> list[str]:
+        return ['print("\\nBütün değerler ders notlarıyla uyuşuyor.")']

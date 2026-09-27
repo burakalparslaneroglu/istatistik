@@ -1,9 +1,13 @@
+"""IKT 217 İstatistik I etkileşimli ders uygulamasının kabuğu ve konu yönlendirmesi."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import streamlit as st
 
+from core.codegen.base import LANGUAGES
+from core.topic_registry import get_topic, list_topics
 from core.ui_components import load_css
 from core.ui_preferences import render_text_scale_control
 from topics.konu01_veri_istatistige_giris import render as render_konu01
@@ -19,44 +23,45 @@ from topics.konu10_surekli_rassal_degisken_normal import render as render_konu10
 from topics.konu11_normal_uygulamalar_diger_surekli import render as render_konu11
 from topics.konu12_ornekleme_ornekleme_dagilimlari import render as render_konu12
 
+COURSE = "IKT 217 İstatistik I"
 
-st.set_page_config(
-    page_title="İKT 217 İstatistik",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-load_css(Path("assets/styles.css"))
-render_text_scale_control()
-
-st.sidebar.markdown("## İKT 217 İstatistik")
-st.sidebar.caption("Etkileşimli ders uygulaması")
-
-TOPICS = {
-    "Konu 01 · Veri ve İstatistiğe Giriş": render_konu01,
-    "Konu 02 · Kategorik Verilerin Özetlenmesi": render_konu02,
-    "Konu 03 · Nicel Verilerin Özetlenmesi": render_konu03,
-    "Konu 04 · Merkezi Eğilim ve Konum Ölçüleri": render_konu04,
-    "Konu 05 · Değişkenlik, Dağılım ve İlişki": render_konu05,
-    "Konu 06 · Olasılığın Temelleri": render_konu06,
-    "Konu 07 · Koşullu Olasılık, Bağımsızlık ve Bayes": render_konu07,
-    "Konu 08 · Rassal Değişkenler ve Kesikli Dağılımlar": render_konu08,
-    "Konu 09 · Binom, Poisson ve Hipergeometrik": render_konu09,
-    "Konu 10 · Sürekli Rassal Değişkenler ve Normal Dağılım": render_konu10,
-    "Konu 11 · Normal Uygulamaları ve Diğer Sürekli Dağılımlar": render_konu11,
-    "Konu 12 · Örnekleme ve Örnekleme Dağılımları": render_konu12,
+TOPIC_RENDERERS = {
+    "konu01": render_konu01,
+    "konu02": render_konu02,
+    "konu03": render_konu03,
+    "konu04": render_konu04,
+    "konu05": render_konu05,
+    "konu06": render_konu06,
+    "konu07": render_konu07,
+    "konu08": render_konu08,
+    "konu09": render_konu09,
+    "konu10": render_konu10,
+    "konu11": render_konu11,
+    "konu12": render_konu12,
 }
 
-selected_topic = st.sidebar.radio(
-    "Konu seçiniz",
-    options=list(TOPICS),
-    key="selected_topic",
-)
+st.set_page_config(page_title=COURSE, page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
-st.sidebar.divider()
-st.sidebar.caption(
-    "Ders notları içerik, terminoloji ve konu sırası açısından bağlayıcı kaynaktır."
-)
+load_css(Path(__file__).parent / "assets" / "styles.css")
+render_text_scale_control()
 
-TOPICS[selected_topic]()
+with st.sidebar:
+    st.markdown(f"## {COURSE}")
+    st.caption("Etkileşimli ders uygulaması")
+    selected_topic = st.radio(
+        "Konu seçiniz",
+        options=[topic.key for topic in list_topics()],
+        format_func=lambda key: get_topic(key).label,
+        key="selected_topic",
+    )
+    st.divider()
+    st.markdown("#### Kod dili")
+    st.segmented_control(
+        "Kod dili", options=LANGUAGES, default=LANGUAGES[0], key="code_language",
+        label_visibility="collapsed", width="stretch",
+    )
+    st.caption("Uygulama ve Sezgi sekmelerindeki kodlar bu dilde gösterilir.")
+    st.divider()
+    st.caption("Ders notları içerik, terminoloji ve konu sırası açısından bağlayıcı kaynaktır.")
+
+TOPIC_RENDERERS[selected_topic]()

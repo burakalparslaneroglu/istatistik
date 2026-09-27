@@ -51,3 +51,44 @@ def test_every_render_plotly_call_has_nonempty_xy_titles():
                 if not isinstance(value, ast.Constant) or not isinstance(value.value, str) or not value.value.strip():
                     failures.append(f"{path}:{call.lineno} -> {required}")
     assert not failures, "Eksik/boş grafik eksen başlığı: " + ", ".join(failures)
+
+
+def test_plotly_chart_is_called_only_by_the_shared_renderers():
+    allowed = {Path("core/charts.py"), Path("core/ui_components.py")}
+    offenders = []
+    for path in [*Path("core").rglob("*.py"), *TOPICS_DIR.glob("*.py"), Path("app.py")]:
+        if path in allowed:
+            continue
+        for call in _calls_in(path):
+            if _call_name(call) == "st.plotly_chart":
+                offenders.append(str(path))
+    assert not offenders, f"Ortak grafik katmanı dışında st.plotly_chart: {offenders}"
+
+
+def test_shared_figure_renderer_rejects_missing_axis_titles():
+    import plotly.graph_objects as go
+    import pytest
+
+    from core.charts import show_figure, style_figure
+
+    figure = style_figure(go.Figure(go.Bar(x=["a"], y=[1])), title="Başlık", x_title="Kategori", y_title="")
+    with pytest.raises(ValueError, match="eksen adı"):
+        show_figure(figure)
+
+
+def test_every_lab_and_experiment_chart_has_axis_titles():
+    import importlib
+
+    from core.labs.registry import LABS
+    from core.labs.spec import CHARTS, Histogram, PieChart
+
+    experiments = []
+    for key in LABS:
+        module = importlib.import_module(f"core.labs.sezgi_{key}")
+        experiments.extend(getattr(module, f"{key.upper()}_EXPERIMENTS"))
+    operations = [op for spec in LABS.values() for step in spec.steps for op in step.operations]
+    operations += [op for experiment in experiments for op in experiment.build(experiment.defaults())]
+    for op in operations:
+        if isinstance(op, CHARTS) and not isinstance(op, PieChart):
+            assert op.title.strip() and op.x_label.strip(), op
+            assert isinstance(op, Histogram) or op.y_label.strip(), op

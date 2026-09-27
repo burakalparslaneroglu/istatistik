@@ -1,0 +1,24 @@
+# IKT 217 Geliştirme Kuralları
+
+1. Güncel yerel ders notları konu sırası, terminoloji, notasyon ve yorumlama sınırları için bağlayıcıdır.
+2. Ders notu, sunum ve uygulama arasında uyuşmazlık ya da notlarda hata bulunursa sessiz düzeltme yapılmaz. Düzeltme aynı turda kaynağından başlar: önce ders notu (LaTeX), sonra ilgili sunum, sonra uygulama; notlar ve sunumlar sıfır hatayla yeniden derlenir. Her değişiklik raporlanır. İçerik kararı gerektiren uyuşmazlıklar `NOTE_CONSISTENCY_ISSUE` olarak raporlanır ve kullanıcı kararı beklenir. Notlar ve sunumlar bu depoda değil, öğretim elemanının yerel klasöründe tutulur (kural 11).
+3. Look-ahead öğretim yapılmaz. Sonraki konunun yöntemi önceki konuda aktif uygulama olarak açılmaz.
+4. İstatistiksel hesaplama, simülasyon ve soru üretimi Streamlit'ten bağımsız `core/` katmanında tutulur.
+5. `app.py` yalnız ortak kabuğu, konu seçimini, kod dili seçimini ve seçili konunun `render()` çağrısını içerir.
+6. Çalışma anında LLM, dış AI API veya gizli anahtar kullanılmaz.
+7. Rassallık `np.random.default_rng(seed)` ile yönetilir; tohum üretilen kodda görünür. Bir deneyde tek üreteç vardır ve bütün çekilişler işlem sırasıyla ondan yapılır.
+8. Her grafikte eksen adı, gerektiğinde birim ve legend bulunur. Yeni konularda `st.plotly_chart` yalnız `core/charts.show_figure` içinden çağrılır (eski konularda `core/ui_components.render_plotly`). Sayılar Türkçe biçimde gösterilir: ondalık virgül, yüzde işareti sayıdan önce (%62,5).
+9. Betimsel sonuç yalnız gözlenen veriyi betimler; anakütleye genelleme örneklemin nasıl seçildiği açık değilse yapılmaz. Birlikte hareket nedensellik diye sunulmaz.
+10. Ham teknik değişken adları öğrenci arayüzünde açıklamasız gösterilmez (`LabSpec.labels`).
+11. Private ders materyali ve lisansı doğrulanmamış veri public repoya commit edilmez. `references_private/` izlenmez.
+12. Her değişiklik sonunda `pytest`, `compileall` ve `git diff --check` çalıştırılır.
+13. Üretilen kod çalıştığı klasörde dosya bırakmaz (OneDrive eşitlemesi): R betikleri Rscript ile çalışırken grafikleri R'nin geçici klasörüne yazar. Testler bunu denetler.
+
+## Konu şablonu
+
+14. Her konu üç sekmeden oluşur ve bu sıra korunur:
+    - **Uygulama:** ders notlarındaki çözümlü örnekler, bölüm sırasıyla (`core/labs/konuNN.py`). Veriler notlardaki küçük veri setleridir ve tanımın içinde yazılıdır. Notlarda basılı her sayı bir `Check` olarak tanıma girer; uygulama ve üretilen Python/R kodu bu sayıları yeniden üretmelidir. Notlara yeni bölüm veya örnek eklenmez.
+    - **Sezgi:** DGP'si açıkça yazılmış kontrollü deneyler (`core/labs/sezgi_konuNN.py`). Her deney şu sırayı izler: soru → DGP ve parametreleri → neye bakıyoruz → sonuç → ne gördük → kod.
+    - **Kendini sına:** 24 soruluk set (`core/quiz/konuNN.py`): çoktan seçmeli, doğru–yanlış, boşluk doldurma, denklem yazma. Her soru tek bir kavramı sınar ve notlardaki bir bölüme bağlıdır; bölümün her numaralı alt bölümü kapsanır. Sorular notlardaki egzersiz ve mini quiz maddelerini tekrar etmez. Tür başına en az 4 soru; Konu 1'de denklem sorusu 3'tür (ders yürütücüsü kararı, testte belgelidir).
+15. Python ve R kodu aynı tanımdan üretilir; elle yazılmış dile özgü şablon eklenmez. Her adım veya deney, iki dilde aynı sayının hangi anlamda beklendiğini (birebir / ayar sabitlenince / yalnız dağılımda) gösterir. Stata kodu üretilmez.
+16. Yeni yapıya taşınan konu `tests/test_topic_contracts.py` içindeki `MIGRATED_TOPICS` kümesine eklenir; o konunun eski `core/topicNN_logic.py` modülü ve testleri aynı blokta kaldırılır.
