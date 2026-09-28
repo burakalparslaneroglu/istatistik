@@ -55,11 +55,15 @@ STATISTICS = (
 ``var`` ve ``std``: örneklem varyansı s² ve standart sapması s (payda n − 1); ``nunique``: farklı değer sayısı."""
 PAIR_STATISTICS = ("cov", "corr")
 """İki değişkenli istatistikler: örneklem kovaryansı s_xy (payda n − 1) ve Pearson korelasyonu r."""
-DISTRIBUTIONS = ("normal", "uniform", "beta", "gamma")
+DISTRIBUTIONS = ("normal", "uniform", "beta", "gamma", "exponential")
+"""Sürekli çekilişler: normal (μ, σ), tek-düze (a, b), beta (a, b), gamma (biçim, ölçek) ve üstel (μ, σ = μ)."""
 COUNT_DISTRIBUTIONS = {"binomial": 2, "poisson": 1, "hypergeometric": 3}
 """Sayım çekilişlerinin dağılımları ve parametre sayıları: binom (n, p), Poisson (λ), hipergeometrik (N, r, n)."""
-DENSITIES = ("normal", "uniform")
-"""Yoğunluk grafiğinin dağılımları: normal (μ, σ) ve tek-düze (a, b)."""
+DENSITIES = ("normal", "uniform", "exponential", "gamma")
+"""Yoğunluk grafiğinin dağılımları ve iki parametresi: normal (μ, σ), tek-düze (a, b), üstel (μ, σ = μ; notlardaki
+ortalama süre parametrelemesi) ve gamma (biçim k, oran r; üstel anakütleden n gözlemin ortalaması X̄ için k = r = n)."""
+Parameter = Union[float, str]
+"""Grafik parametresi: sayı ya da önceden hesaplanmış bir skalerin adı (kodda aynı adlı değişken)."""
 BOX_ROWS = (
     "en_kucuk", "q1", "medyan", "q3", "en_buyuk", "iqr", "alt_sinir", "ust_sinir", "alt_biyik", "ust_biyik",
     "aykiri_sayisi",
@@ -300,7 +304,7 @@ class DrawCount:
 class DrawCategory:
     """Kategorik rastgele değişken.
 
-    Her gözlem için u ~ Tekdüze(0, 1) çekilir; kategori, birikimli olasılığı u'yu ilk aşan kategoridir
+    Her gözlem için u ~ Tek-düze(0, 1) çekilir; kategori, birikimli olasılığı u'yu ilk aşan kategoridir
     (birikimli olasılıkların sonuncusu 1 kabul edilir). ``by`` verilirse olasılıklar o değişkenlerin
     kategorilerine göre değişir: ``probabilities`` (koşul etiketleri, olasılıklar) çiftleridir;
     ``by`` boşsa tek çift vardır ve etiketler boş demettir.
@@ -318,7 +322,7 @@ class DrawCategory:
 class DrawDiscrete:
     """Kesikli rassal değişken: ``values`` değerlerini ``probabilities`` olasılıklarıyla alır.
 
-    Ters dağılım fonksiyonu yöntemi: her gözlem için u ~ Tekdüze(0, 1) çekilir; X, birikimli olasılığı F(x) u'yu
+    Ters dağılım fonksiyonu yöntemi: her gözlem için u ~ Tek-düze(0, 1) çekilir; X, birikimli olasılığı F(x) u'yu
     ilk aşan değerdir (birikimli olasılıkların sonuncusu 1 kabul edilir). ``DrawCategory`` ile aynı kural; sonuç
     sayıdır, kategori etiketi değildir.
     """
@@ -627,6 +631,9 @@ class LineChart:
     title: str
     references: tuple[tuple[str, str], ...] = ()
     markers: bool = True
+    bands: tuple[tuple[str, str], ...] = ()
+    """(sütun, etiket): aynı çerçeveden kesikli çizgiyle çizilen ek seriler (ör. μ ± 2σ/√n bandının iki kenarı);
+    boş etiketli seri açıklamada gösterilmez."""
 
 
 @dataclass(frozen=True)
@@ -674,6 +681,9 @@ class Histogram:
     x_label: str
     references: tuple[tuple[float | str, str], ...] = ()
     y_label: str = "Tekrar sayısı"
+    curves: tuple[tuple[str, "Parameter", "Parameter", str], ...] = ()
+    """(dağılım, birinci, ikinci parametre, etiket): beklenen sayı eğrileri. Kutudaki beklenen sayı, ilk serinin gözlem
+    sayısı × kutu genişliği × f(x)'tir; histogramın yüksekliğiyle aynı ölçektedir (``DENSITIES``)."""
 
 
 @dataclass(frozen=True)
@@ -766,9 +776,10 @@ class DensityPlot:
     """Sürekli bir dağılımın yoğunluk eğrisi f(x) (``DENSITIES``); ``shade`` aralıklarının altı boyanır: olasılık,
     eğri altındaki alandır.
 
-    ``first`` ve ``second``: normalde μ ve σ, tek-düzede a ve b. ``x_range`` yatay eksenin sınırlarıdır (kaydırıcılar
-    değişince aynı eksen). ``references``: (değer, etiket) dikey çizgileri. ``y_max`` verilirse dikey eksen 0 ile
-    ``y_max`` arasında sabittir: σ büyüyünce eğrinin basıklaştığı görülür.
+    ``first`` ve ``second``: normalde μ ve σ, tek-düzede a ve b, üstelde μ ve σ = μ, gammada biçim ve oran.
+    ``x_range`` yatay eksenin sınırlarıdır (kaydırıcılar değişince aynı eksen). ``references``: (değer, etiket) dikey
+    çizgileri. ``y_max`` verilirse dikey eksen 0 ile ``y_max`` arasında sabittir: σ büyüyünce eğrinin basıklaştığı
+    görülür.
     """
 
     distribution: str
@@ -781,6 +792,45 @@ class DensityPlot:
     shade: tuple[tuple[float, float], ...] = ()
     references: tuple[tuple[float, str], ...] = ()
     y_max: float | None = None
+
+
+@dataclass(frozen=True)
+class DensityCompare:
+    """Aynı eksende birden fazla yoğunluk eğrisi (ör. bireysel X ile farklı n'lerde X̄'in yoğunlukları).
+
+    ``curves``: (dağılım, birinci, ikinci parametre, etiket); parametreler sayı ya da önceden hesaplanmış bir
+    skalerin adıdır (``DENSITIES``). Eğriler ``PALETTE`` sırasıyla çizilir.
+    """
+
+    curves: tuple[tuple[str, Parameter, Parameter, str], ...]
+    x_range: tuple[float, float]
+    title: str
+    x_label: str
+    y_label: str = "f(x)"
+    y_max: float | None = None
+
+
+@dataclass(frozen=True)
+class PmfWithDensity:
+    """Kesikli olasılık fonksiyonu (``frame``'in ``x`` ve ``y`` sütunları; çubuklar) ve aynı eksende sürekli bir
+    yaklaşım yoğunluğu (``distribution``, ``first``, ``second``; parametre sayı ya da skaler adı).
+
+    ``shade`` aralıklarının altı boyanır: sürekli yaklaşımda bir tam sayı değerinin karşılığı olan alan (süreklilik
+    düzeltmesi, ör. X = 12 → 11,5–12,5).
+    """
+
+    frame: str
+    x: str
+    y: str
+    distribution: str
+    first: Parameter
+    second: Parameter
+    x_label: str
+    y_label: str
+    title: str
+    bar_label: str
+    curve_label: str
+    shade: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -846,12 +896,14 @@ Operation = Union[
     TreeDiagram,
     HeatMap,
     DensityPlot,
+    DensityCompare,
+    PmfWithDensity,
     MonteCarlo,
 ]
 
 CHARTS = (
     BarChart, GroupedBarChart, CompareBarChart, PieChart, LineChart, ScatterPlot, BoxPlot, Histogram, ClassHistogram,
-    DotPlot, MosaicChart, TreeDiagram, HeatMap, DensityPlot,
+    DotPlot, MosaicChart, TreeDiagram, HeatMap, DensityPlot, DensityCompare, PmfWithDensity,
 )
 AXISLESS_CHARTS = (PieChart, TreeDiagram)
 """Ekseni olmayan grafikler: eksen adı gerekmez (pasta dilimleri, olasılık ağacı)."""

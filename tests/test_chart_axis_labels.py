@@ -39,22 +39,8 @@ def test_topic_files_do_not_bypass_shared_plotly_renderer():
     assert not offenders, f"Doğrudan st.plotly_chart kullanımı bulundu: {offenders}"
 
 
-def test_every_render_plotly_call_has_nonempty_xy_titles():
-    failures = []
-    for path in TOPICS_DIR.glob("*.py"):
-        for call in _calls_in(path):
-            if _call_name(call) != "render_plotly":
-                continue
-            kwargs = {kw.arg: kw.value for kw in call.keywords if kw.arg}
-            for required in ("x_title", "y_title"):
-                value = kwargs.get(required)
-                if not isinstance(value, ast.Constant) or not isinstance(value.value, str) or not value.value.strip():
-                    failures.append(f"{path}:{call.lineno} -> {required}")
-    assert not failures, "Eksik/boş grafik eksen başlığı: " + ", ".join(failures)
-
-
 def test_plotly_chart_is_called_only_by_the_shared_renderers():
-    allowed = {Path("core/charts.py"), Path("core/ui_components.py")}
+    allowed = {Path("core/charts.py")}
     offenders = []
     for path in [*Path("core").rglob("*.py"), *TOPICS_DIR.glob("*.py"), Path("app.py")]:
         if path in allowed:

@@ -57,11 +57,12 @@ DISTRIBUTION_FUNCTIONS = ("dbinom", "pbinom", "dpois", "ppois", "dhyper", "phype
 """Olasılık fonksiyonları ve birikimli olasılıklar (vektör üzerinde de çalışır): Python'da ``scipy.stats``, R'de
 ``dbinom``/``pbinom``, ``dpois``/``ppois``, ``dhyper``/``phyper`` ve ``dnorm``."""
 FUNCTIONS = (
-    "neg", "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "floor", "normcdf", "normpdf", "norminv",
+    "neg", "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "roundto", "floor", "normcdf", "normpdf",
+    "norminv",
     "cumprod", "cummean", "seq", "factorial", "comb", "perm", *DISTRIBUTION_FUNCTIONS, *COMPARISONS,
 )
 ARITY = {
-    **{name: 2 for name in ("maximum", "minimum", "comb", "perm", "dpois", "ppois", *COMPARISONS)},
+    **{name: 2 for name in ("maximum", "minimum", "roundto", "comb", "perm", "dpois", "ppois", *COMPARISONS)},
     **{name: 3 for name in ("dbinom", "pbinom", "dnorm")},
     "dhyper": 4, "phyper": 4,
 }
@@ -146,6 +147,12 @@ def rounded(a) -> Call:
     """En yakın tam sayıya yuvarlama (sürekli çekilişlerde yarım değer olasılığı sıfırdır)."""
 
     return Call("round", (_wrap(a),))
+
+
+def roundto(a, digits: int) -> Call:
+    """``digits`` ondalık basamağa yuvarlama (ör. tablo değerleri: z iki, Φ(z) dört basamak)."""
+
+    return Call("roundto", (_wrap(a), _wrap(digits)))
 
 
 def normcdf(a) -> Call:
@@ -370,6 +377,8 @@ def evaluate(
             return np.abs(values[0])
         if expr.fn == "round":
             return np.rint(values[0])
+        if expr.fn == "roundto":
+            return np.round(values[0], int(values[1]))
         if expr.fn == "floor":
             return np.floor(values[0])
         if expr.fn == "normcdf":

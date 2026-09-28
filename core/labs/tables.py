@@ -265,7 +265,7 @@ def thresholds(probabilities: Sequence[float]) -> np.ndarray:
 
 def draw_categories(frame: pd.DataFrame, u: np.ndarray, categories: Sequence[str],
                     probabilities, by: Sequence[str]) -> np.ndarray:
-    """u ~ Tekdüze(0, 1) değerlerinden kategoriler: birikimli olasılığı u'yu ilk aşan kategori."""
+    """u ~ Tek-düze(0, 1) değerlerinden kategoriler: birikimli olasılığı u'yu ilk aşan kategori."""
 
     labels = np.asarray(categories, dtype=object)
     result = np.full(len(frame), None, dtype=object)
@@ -327,7 +327,8 @@ def rectangle_midpoints(lower: float, width: float, count: int) -> np.ndarray:
 
 
 def density(distribution: str, first: float, second: float, x) -> np.ndarray:
-    """Yoğunluk f(x): normal (μ = first, σ = second) ya da tek-düze U(a = first, b = second)."""
+    """Yoğunluk f(x): normal (μ = first, σ = second), tek-düze U(a = first, b = second), üstel (ortalama süre
+    μ = first, σ = second = μ) ya da gamma (biçim k = first, oran r = second)."""
 
     if distribution not in DENSITIES:
         raise ValueError(f"Desteklenmeyen yoğunluk: {distribution}")
@@ -335,6 +336,14 @@ def density(distribution: str, first: float, second: float, x) -> np.ndarray:
         if second <= 0:
             raise ValueError("Standart sapma pozitif olmalıdır.")
         return stats.norm.pdf(x, first, second)
+    if distribution == "exponential":
+        if first <= 0 or second != first:
+            raise ValueError("Üstel dağılımda ortalama süre μ pozitiftir ve σ = μ'dür.")
+        return stats.expon.pdf(x, scale=first)
+    if distribution == "gamma":
+        if first <= 0 or second <= 0:
+            raise ValueError("Gamma dağılımında biçim ve oran pozitif olmalıdır.")
+        return stats.gamma.pdf(x, first, scale=1 / second)
     if second <= first:
         raise ValueError("Tek-düze dağılımda b > a olmalıdır.")
     return stats.uniform.pdf(x, first, second - first)

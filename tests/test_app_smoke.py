@@ -30,7 +30,8 @@ def test_app_opens_on_topic_01_with_three_tabs() -> None:
 def test_every_lab_step_renders_in_both_languages() -> None:
     app = _run_app()
     for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
-                         ("konu06", 9), ("konu07", 10), ("konu08", 12), ("konu09", 8), ("konu10", 7)):
+                         ("konu06", 9), ("konu07", 10), ("konu08", 12), ("konu09", 8), ("konu10", 7), ("konu11", 10),
+                         ("konu12", 6)):
         app.radio(key="selected_topic").set_value(topic).run()
         for language in ("Python", "R"):
             app.segmented_control(key="code_language").set_value(language).run()
@@ -66,7 +67,7 @@ def test_every_experiment_runs_and_reacts_to_its_sliders() -> None:
     app.slider(key="konu01_sezgi1_c").set_value(10.0).run()
     assert {metric.label: metric.value for metric in app.metric}["Önde olan şube, kod 1-2-c"] == "B"
     for topic in ("konu01", "konu02", "konu03", "konu04", "konu05", "konu06", "konu07", "konu08", "konu09",
-                  "konu10"):
+                  "konu10", "konu11", "konu12"):
         app.radio(key="selected_topic").set_value(topic).run()
         for number in (1, 2, 3):
             app.segmented_control(key=f"{topic}_sezgi_deney").set_value(number).run()

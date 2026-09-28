@@ -6,7 +6,7 @@ açısından bağlayıcı kaynaktır.
 
 ## Konular ve kapsam
 
-Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç sekme vardır:
+Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 
 - **Uygulama:** ders notlarındaki çözümlü örnekler, bölüm sırasıyla. Tablolar notlardaki sayıların
   aynısını verir; her adımın Python ve R kodu gösterilir, bütün uygulama tek dosya olarak indirilir.
@@ -26,10 +26,11 @@ Konular ders notlarının bölümleridir. Yeni yapıya taşınan konularda üç 
 | 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı | 12 | 65 | 3 | 24 |
 | 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı | 8 | 39 | 3 | 24 |
 | 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Yeni yapı | 7 | 30 | 3 | 24 |
-| 11 | Normal Olasılıklar ve Üstel Dağılım | Eski yapı | — | — | — | — |
-| 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Eski yapı | — | — | — | — |
+| 11 | Normal Olasılıklar ve Üstel Dağılım | Yeni yapı | 10 | 46 | 3 | 24 |
+| 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Yeni yapı | 6 | 19 | 3 | 24 |
 
-Eski yapıdaki konular sırayla yeni yapıya taşınır.
+Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
+yolun aynısını verir.
 
 ## İki dilde kod
 
@@ -44,7 +45,7 @@ sonucun hangi anlamda aynı olduğu yazılır:
 sayılarla karşılaştırır (`OK` / `HATA`). Gerekli paketler:
 
 - Python 3.12: `pandas`, `numpy`, `matplotlib`. Olasılık dağılımı fonksiyonu (binom, Poisson, hipergeometrik,
-  normal, tek-düze) kullanan kod ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2, Konu 9 ve Konu 10).
+  normal, tek-düze, üstel, gamma) kullanan kod ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2 ve Konu 9–12).
 - R 4.2 veya üstü: yalnız temel R; ek paket gerekmez. Betik Rscript ile çalıştırılırsa grafikler
   çalışma klasörüne değil R'nin geçici klasörüne yazılır; RStudio'da Plots panelinde görünür.
 
@@ -110,8 +111,8 @@ Kararlı `main` dalı Streamlit Community Cloud üzerinden yayımlanabilir:
 
 Uygulama secret veya dış API kullanmadığından ek bir secret yapılandırması gerektirmez.
 
-Yayın sonrasında en az yeni yapıdaki iki konu ve eski yapıdaki bir konu için canlı duman testi yapılmalıdır:
-Uygulama adımları, Sezgi kaydırıcıları, Kendini sına kontrolü, kod dili seçimi ve metin ölçeği.
+Yayın sonrasında en az iki konu için canlı duman testi yapılmalıdır: Uygulama adımları, Sezgi kaydırıcıları,
+Kendini sına kontrolü, kod dili seçimi ve metin ölçeği.
 
 ## Kullanım ve lisans notu
 

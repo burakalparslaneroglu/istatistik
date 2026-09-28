@@ -42,7 +42,7 @@ def _build_frequency(parameters: Parameters) -> tuple:
     n, p = int(parameters["n"]), round(float(parameters["p"]), 2)
     return (
         NewSample("islem", n, SEED),
-        Draw("islem", "u", "uniform", 0, 1, "u ~ Tekdüze(0, 1)"),
+        Draw("islem", "u", "uniform", 0, 1, "u ~ Tek-düze(0, 1)"),
         Derive("islem", "gecikme", E.compare("lt", E.var("u"), p), "Gecikme: u < p ise 1, değilse 0"),
         Derive("islem", "k", E.seq(E.var("u")), "İşlem sırası k = 1, 2, …, n"),
         Derive("islem", "oran", E.cummean(E.var("gecikme")), "Birikimli gecikme oranı: ilk k işlemdeki gecikme / k"),
@@ -59,7 +59,7 @@ def _frequency_dgp(parameters: Parameters) -> tuple[str, ...]:
     n, p = int(parameters["n"]), round(float(parameters["p"]), 2)
     return (
         rf"G_k = \begin{{cases}} 1 & u_k < p \\ 0 & \text{{aksi hâlde}} \end{{cases}}, \qquad "
-        rf"u_k \sim \text{{Tekdüze}}(0,\ 1), \qquad p = {number(p, 2)}, \qquad n = {n}",
+        rf"u_k \sim \text{{Tek-düze}}(0,\ 1), \qquad p = {number(p, 2)}, \qquad n = {n}",
         r"\hat{p}_k = \frac{G_1 + G_2 + \cdots + G_k}{k} \qquad \text{(ilk } k \text{ işlemdeki gecikme oranı)}",
     )
 
@@ -115,7 +115,7 @@ RELATIVE_FREQUENCY = SimExperiment(
     ),
     dgp=_frequency_dgp,
     dgp_note=(
-        "Her işlem birbirinden bağımsız olarak p olasılıkla gecikir: u ~ Tekdüze(0, 1) çekilir, u < p ise işlem "
+        "Her işlem birbirinden bağımsız olarak p olasılıkla gecikir: u ~ Tek-düze(0, 1) çekilir, u < p ise işlem "
         "gecikmiştir. Tohum 217'dir; p = 0,15 ve n = 100 notlardaki Şekil 6.6'yı birebir üretir."
     ),
     look_at=(
@@ -143,8 +143,8 @@ def _build_dice(parameters: Parameters) -> tuple:
         Derive("iki_zar", "toplam", E.add(E.var("birinci"), E.var("ikinci")), "Zar çiftinin toplamı"),
         FrequencyTable("iki_zar", "toplam", "klasik", SUMS),
         NewSample("atis", n, SEED),
-        Draw("atis", "u1", "uniform", 0, 1, "Birinci zar için u ~ Tekdüze(0, 1)"),
-        Draw("atis", "u2", "uniform", 0, 1, "İkinci zar için u ~ Tekdüze(0, 1)"),
+        Draw("atis", "u1", "uniform", 0, 1, "Birinci zar için u ~ Tek-düze(0, 1)"),
+        Draw("atis", "u2", "uniform", 0, 1, "İkinci zar için u ~ Tek-düze(0, 1)"),
         Derive("atis", "birinci", E.add(E.floor(E.mul(6, E.var("u1"))), 1), face),
         Derive("atis", "ikinci", E.add(E.floor(E.mul(6, E.var("u2"))), 1), face),
         Derive("atis", "toplam", E.add(E.var("birinci"), E.var("ikinci")), "Atılan iki zarın toplamı"),
@@ -159,7 +159,7 @@ def _build_dice(parameters: Parameters) -> tuple:
 def _dice_dgp(parameters: Parameters) -> tuple[str, ...]:
     n = int(parameters["n"])
     return (
-        rf"Z_j = \lfloor 6u_j \rfloor + 1, \qquad u_j \sim \text{{Tekdüze}}(0,\ 1), \qquad "
+        rf"Z_j = \lfloor 6u_j \rfloor + 1, \qquad u_j \sim \text{{Tek-düze}}(0,\ 1), \qquad "
         rf"T = Z_1 + Z_2, \qquad n = {n} \text{{ atış}}",
         r"P(T = t) = \frac{\text{toplamı } t \text{ olan zar çifti sayısı}}{36}",
     )

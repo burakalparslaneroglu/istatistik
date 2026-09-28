@@ -290,6 +290,16 @@ def _show_metrics(items: list[tuple[str, str]]) -> None:
             column.metric(title, value)
 
 
+def _input_only(operations, index: int, state: LabState) -> bool:
+    """Satır içi veri, aynı adımda aynı çerçevenin bütün sütunlarını gösteren bir ``ShowFrame`` ile sonuçlanıyorsa
+    yalnız girdi sütunlarıyla gösterilir: aynı tablo iki kez görünmez."""
+
+    op = operations[index]
+    columns = set(state.frames[op.frame].columns)
+    return any(isinstance(later, ShowFrame) and later.frame == op.frame and columns <= set(later.columns)
+               for later in operations[index + 1:])
+
+
 def render_operations(operations, state: LabState, label: Callable[[str], str], key_prefix: str) -> None:
     """İşlemlerin sonuçlarını sırayla gösterir; art arda gelen tek sayılar tek satırda toplanır."""
 
@@ -303,6 +313,8 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             pending = []
         if isinstance(op, InlineData):
             frame = state.frames[op.frame]
+            if _input_only(operations, index, state):
+                frame = frame[list(op.columns)]
             st.markdown(f"**{op.comment}**")
             if op.layout and len(op.columns) == 1 and len(frame) % op.layout == 0:
                 # Notlardaki gibi satır başına ``layout`` değer; sütun başlıkları satır içindeki sıradır.

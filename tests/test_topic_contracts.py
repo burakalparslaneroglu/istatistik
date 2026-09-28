@@ -28,7 +28,8 @@ TOPIC_MODULES = {
 
 # Uygulama + Sezgi + Kendini sına yapısına geçmiş konular: kod iki dilde, tek tanımdan üretilir.
 MIGRATED_TOPICS = {
-    "konu01", "konu02", "konu03", "konu04", "konu05", "konu06", "konu07", "konu08", "konu09", "konu10",
+    "konu01", "konu02", "konu03", "konu04", "konu05", "konu06", "konu07", "konu08", "konu09", "konu10", "konu11",
+    "konu12",
 }
 
 

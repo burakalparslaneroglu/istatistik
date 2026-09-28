@@ -31,6 +31,7 @@ from core.labs.spec import (
     CompareBarChart,
     Count,
     CrossTab,
+    DensityCompare,
     DensityPlot,
     Derive,
     DotPlot,
@@ -58,6 +59,7 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    PmfWithDensity,
     Rectangles,
     RowSum,
     Scalar,
@@ -88,7 +90,7 @@ _SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv", *E.DISTRIBUTION_FUNCTIONS}
 _MATH_FUNCTIONS = set(E.COUNTING_FUNCTIONS)
 _FUNCTIONS = {
     "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
-    "minimum": "np.minimum", "round": "np.rint", "floor": "np.floor", "cumprod": "np.cumprod",
+    "minimum": "np.minimum", "round": "np.rint", "roundto": "np.round", "floor": "np.floor", "cumprod": "np.cumprod",
     "cummean": "np.cumsum({0}) / np.arange(1, len({0}) + 1)", "seq": "np.arange(1, len({0}) + 1)",
     "factorial": "math.factorial(int({0}))", "comb": "math.comb(int({0}), int({1}))",
     "perm": "math.perm(int({0}), int({1}))",
@@ -171,7 +173,7 @@ def _needs_numpy(operations) -> bool:
     fonksiyonu varsa gerekir."""
 
     numpy_ops = (Groups, NewSample, Draw, DrawCategory, DrawDiscrete, DrawCount, Histogram, MonteCarlo, Percentile,
-                 BoxSummary, BoxPlot, TreeDiagram, Support, Rectangles, DensityPlot)
+                 BoxSummary, BoxPlot, TreeDiagram, Support, Rectangles, DensityPlot, DensityCompare, PmfWithDensity)
     for op in flatten(operations):
         if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
             return True
@@ -202,6 +204,33 @@ def _labelled_charts(operations) -> bool:
         if isinstance(op, ClassHistogram) and op.labels:
             return True
     return False
+
+
+def _uses_density(op: Operation) -> bool:
+    """Yoğunluk eğrisi çizen işlemler scipy.stats ister."""
+
+    return isinstance(op, (DensityPlot, DensityCompare, PmfWithDensity)) or (isinstance(op, Histogram) and op.curves)
+
+
+def _parameter(value) -> str:
+    """Grafik parametresi: sayı ya da önceden hesaplanmış skalerin (aynı adlı değişken) adı."""
+
+    return value if isinstance(value, str) else E.format_number(value)
+
+
+def density_expression(distribution: str, first, second, x: str) -> str:
+    """Yoğunluk f(x)'in scipy yazımı; ``first`` ve ``second`` sayı ya da değişken adıdır."""
+
+    a, b = _parameter(first), _parameter(second)
+    if distribution == "normal":
+        return f"stats.norm.pdf({x}, {a}, {b})"
+    if distribution == "exponential":
+        return f"stats.expon.pdf({x}, scale={a})"
+    if distribution == "gamma":
+        return f"stats.gamma.pdf({x}, {a}, scale=1 / {b})"
+    if isinstance(first, str) or isinstance(second, str):
+        return f"stats.uniform.pdf({x}, {a}, {b} - {a})"
+    return f"stats.uniform.pdf({x}, {a}, {E.format_number(second - first)})"
 
 
 def _where(frame: str, where) -> str:
@@ -235,7 +264,7 @@ class PythonGenerator(Generator):
         if _needs_numpy(operations):
             lines.append("import numpy as np")
         lines.append("import pandas as pd")
-        if functions_used(operations) & _SCIPY_FUNCTIONS or any(isinstance(op, DensityPlot) for op in flat):
+        if functions_used(operations) & _SCIPY_FUNCTIONS or any(_uses_density(op) for op in flat):
             lines.append("from scipy import stats")
         lines.append("")
         return lines
@@ -349,8 +378,11 @@ class PythonGenerator(Generator):
             ]
         if isinstance(op, Draw):
             a, b = E.format_number(op.first), E.format_number(op.second)
-            method = {"normal": "normal", "uniform": "uniform", "beta": "beta", "gamma": "gamma"}[op.distribution]
-            call = f"rng.{method}({a}, {b}, size=len({op.frame}))"
+            if op.distribution == "exponential":  # ortalama süre μ; numpy'de ölçek parametresi
+                call = f"rng.exponential({a}, size=len({op.frame}))"
+            else:
+                method = {"normal": "normal", "uniform": "uniform", "beta": "beta", "gamma": "gamma"}[op.distribution]
+                call = f"rng.{method}({a}, {b}, size=len({op.frame}))"
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {call}']
         if isinstance(op, DrawCount):
             return self._draw_count(op)
@@ -359,7 +391,7 @@ class PythonGenerator(Generator):
         if isinstance(op, DrawDiscrete):
             return [
                 f"# {op.comment}",
-                "# u ~ Tekdüze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
+                "# u ~ Tek-düze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
                 f"u = rng.random(len({op.frame}))",
                 f"{op.name}_degerler = np.array({_list(op.values)}, dtype=float)",
                 f"esik = np.cumsum({_list(op.probabilities)})",
@@ -473,6 +505,10 @@ class PythonGenerator(Generator):
             return self._heatmap(op)
         if isinstance(op, DensityPlot):
             return self._density(op)
+        if isinstance(op, DensityCompare):
+            return self._density_compare(op)
+        if isinstance(op, PmfWithDensity):
+            return self._pmf_density(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"Python üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -585,7 +621,7 @@ class PythonGenerator(Generator):
         categories = f"{op.name}_kategoriler"
         lines = [
             f"# {op.comment}",
-            "# u ~ Tekdüze(0, 1); kategori, birikimli olasılığı u'yu ilk aşan kategoridir",
+            "# u ~ Tek-düze(0, 1); kategori, birikimli olasılığı u'yu ilk aşan kategoridir",
             f"u = rng.random(len({op.frame}))",
             f"{categories} = np.array({_list(op.categories)})",
         ]
@@ -799,13 +835,18 @@ class PythonGenerator(Generator):
         marker = ', marker="o"' if op.markers else ""
         plot = f'ax.plot({op.frame}["{op.x}"], {op.frame}["{op.y}"]{marker}, color="{PALETTE[0]}"'
         lines = ["fig, ax = plt.subplots(figsize=(8, 5))"]
-        # Başvuru çizgisi varsa açıklama (legend) gerekir; seri de adıyla açıklamada yer alır.
-        lines += [plot + ",", f"        label={text(op.y_label)})"] if op.references else [plot + ")"]
+        legend = bool(op.references or op.bands)
+        # Başvuru çizgisi ya da bant varsa açıklama (legend) gerekir; seri de adıyla açıklamada yer alır.
+        lines += [plot + ",", f"        label={text(op.y_label)})"] if legend else [plot + ")"]
         for index, (name, label) in enumerate(op.references):
             color = REFERENCE_COLORS[index % len(REFERENCE_COLORS)]
             style = ("--", ":", "-.")[index % 3]
             lines.append(f'ax.axhline({name}, color="{color}", linestyle="{style}", linewidth=2, label={text(label)})')
-        return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
+        for column, label in op.bands:  # boş etiket açıklamada gösterilmez
+            shown = text(label) if label else '"_nolegend_"'
+            lines.append(f'ax.plot({op.frame}["{op.x}"], {op.frame}["{column}"], color="{PALETTE[2]}", '
+                         f'linestyle="--", linewidth=1.5, label={shown})')
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=legend)
 
     def _box_plot(self, op: BoxPlot) -> list[str]:
         series = [f'    ({text(label)}, {frame}["{variable}"]),' for frame, variable, label in op.series]
@@ -948,6 +989,17 @@ class PythonGenerator(Generator):
             lines.append(
                 f'ax.axvline({position}, color="{color}", linestyle="--", linewidth=2, label={text(label)})'
             )
+        if op.curves:
+            first = op.columns[0][0]
+            lines += [
+                "# Beklenen sayı eğrisi: gözlem sayısı × kutu genişliği × f(x)",
+                f"eksen = np.linspace({lower}, {upper}, 401)",
+                f'beklenen = len({op.table}["{first}"]) * (kutular[1] - kutular[0])',
+            ]
+            for index, (distribution, a, b, label) in enumerate(op.curves, start=len(op.columns)):
+                color = PALETTE[index % len(PALETTE)]
+                curve = density_expression(distribution, a, b, "eksen")
+                lines.append(f'ax.plot(eksen, beklenen * {curve}, color="{color}", linewidth=2, label={text(label)})')
         return lines + self._axes(op.x_label, op.y_label, op.title, legend=True)
 
     def _mosaic(self, op: MosaicChart) -> list[str]:
@@ -1034,15 +1086,18 @@ class PythonGenerator(Generator):
 
     @staticmethod
     def _density_call(op: DensityPlot, x: str) -> str:
-        a, b = E.format_number(op.first), E.format_number(op.second)
-        if op.distribution == "normal":
-            return f"stats.norm.pdf({x}, {a}, {b})"
-        return f"stats.uniform.pdf({x}, {a}, {E.format_number(op.second - op.first)})"
+        return density_expression(op.distribution, op.first, op.second, x)
 
     def _density(self, op: DensityPlot) -> list[str]:
         low, high = (E.format_number(value) for value in op.x_range)
         if op.distribution == "normal":
             note = f"N(μ, σ²) yoğunluğu: μ = {E.format_number(op.first)}, σ = {E.format_number(op.second)}"
+        elif op.distribution == "exponential":
+            note = (f"Üstel yoğunluk f(x) = (1/μ)e^(−x/μ): ortalama süre μ = {E.format_number(op.first)}; "
+                    "scipy'de ölçek μ")
+        elif op.distribution == "gamma":
+            note = (f"Gamma yoğunluğu: biçim {E.format_number(op.first)}, oran {E.format_number(op.second)}; "
+                    "scipy'de ölçek 1/oran")
         else:
             note = (f"U(a, b) yoğunluğu: a = {E.format_number(op.first)}, b = {E.format_number(op.second)}; "
                     "scipy'de konum a, ölçek b − a")
@@ -1067,6 +1122,42 @@ class PythonGenerator(Generator):
         limit = "bottom=0" if op.y_max is None else f"0, {E.format_number(op.y_max)}"
         lines += [f"ax.set_xlim({low}, {high})", f"ax.set_ylim({limit})"]
         return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
+
+    def _density_compare(self, op: DensityCompare) -> list[str]:
+        low, high = (E.format_number(value) for value in op.x_range)
+        lines = [
+            "# Yoğunluk eğrileri aynı eksende",
+            f"eksen = np.linspace({low}, {high}, 401)",
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+        ]
+        for index, (distribution, a, b, label) in enumerate(op.curves):
+            curve = density_expression(distribution, a, b, "eksen")
+            lines.append(f'ax.plot(eksen, {curve}, color="{PALETTE[index % len(PALETTE)]}", linewidth=2, '
+                         f"label={text(label)})")
+        limit = "bottom=0" if op.y_max is None else f"0, {E.format_number(op.y_max)}"
+        lines += [f"ax.set_xlim({low}, {high})", f"ax.set_ylim({limit})"]
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=True)
+
+    def _pmf_density(self, op: PmfWithDensity) -> list[str]:
+        frame, x = op.frame, f'{op.frame}["{op.x}"]'
+        lines = [
+            "fig, ax = plt.subplots(figsize=(8, 5))",
+            f'ax.bar({x}, {frame}["{op.y}"], width=0.6, color="{PALETTE[0]}", alpha=0.8, label={text(op.bar_label)})',
+            f"eksen = np.linspace({x}.min() - 0.5, {x}.max() + 0.5, 401)",
+            f'ax.plot(eksen, {density_expression(op.distribution, op.first, op.second, "eksen")}, '
+            f'color="{PALETTE[1]}", linewidth=2,',
+            f"        label={text(op.curve_label)})",
+        ]
+        if op.shade:
+            pairs = ", ".join(f"({E.format_number(a)}, {E.format_number(b)})" for a, b in op.shade)
+            curve = density_expression(op.distribution, op.first, op.second, "xa")
+            lines += [
+                f"for alt, ust in [{pairs}]:  # sürekli yaklaşımda tam sayı değerinin alanı",
+                "    xa = np.linspace(alt, ust, 200)",
+                f'    ax.fill_between(xa, {curve}, color="{PALETTE[1]}", alpha=0.3)',
+            ]
+        lines.append("ax.set_ylim(bottom=0)")
+        return lines + self._axes(op.x_label, op.y_label, op.title, legend=True)
 
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [

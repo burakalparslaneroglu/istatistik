@@ -29,6 +29,7 @@ from core.labs.spec import (
     CompareBarChart,
     Count,
     CrossTab,
+    DensityCompare,
     DensityPlot,
     Derive,
     DotPlot,
@@ -56,6 +57,7 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    PmfWithDensity,
     Rectangles,
     RowSum,
     Scalar,
@@ -80,7 +82,8 @@ _STAT = {"sum": "sum", "mean": "mean", "median": "median", "prod": "prod", "min"
 """R'nin ``var`` ve ``sd`` fonksiyonları örneklem ölçüleridir (payda n − 1)."""
 _FUNCTIONS = {
     "log": "log", "exp": "exp", "sqrt": "sqrt", "abs": "abs", "maximum": "pmax", "minimum": "pmin",
-    "round": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm", "norminv": "qnorm",
+    "round": "round", "roundto": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm",
+    "norminv": "qnorm",
     "cumprod": "cumprod", "cummean": "cumsum({0}) / seq_along({0})", "seq": "seq_along({0})",
     "factorial": "factorial({0})", "comb": "choose({0}, {1})", "perm": "factorial({0}) / factorial({0} - {1})",
     "dbinom": "dbinom", "pbinom": "pbinom", "dpois": "dpois", "ppois": "ppois", "dnorm": "dnorm",
@@ -169,6 +172,25 @@ _ORDERED_SELECTIONS = [
     "  matrix(x[g], ncol = k)",
     "}",
 ]
+
+
+def _parameter(value) -> str:
+    """Grafik parametresi: sayı ya da önceden hesaplanmış skalerin (aynı adlı değişken) adı."""
+
+    return value if isinstance(value, str) else E.format_number(value)
+
+
+def density_expression(distribution: str, first, second, x: str) -> str:
+    """Yoğunluk f(x)'in R yazımı; ``first`` ve ``second`` sayı ya da değişken adıdır."""
+
+    a, b = _parameter(first), _parameter(second)
+    if distribution == "normal":
+        return f"dnorm({x}, {a}, {b})"
+    if distribution == "exponential":
+        return f"dexp({x}, rate = 1 / {a})"
+    if distribution == "gamma":
+        return f"dgamma({x}, shape = {a}, rate = {b})"
+    return f"dunif({x}, {a}, {b})"
 
 
 def _vector(values) -> str:
@@ -336,6 +358,7 @@ class RGenerator(Generator):
                 "uniform": f"runif(nrow({op.frame}), min = {a}, max = {b})",
                 "beta": f"rbeta(nrow({op.frame}), shape1 = {a}, shape2 = {b})",
                 "gamma": f"rgamma(nrow({op.frame}), shape = {a}, scale = {b})",
+                "exponential": f"rexp(nrow({op.frame}), rate = 1 / {a})",  # ortalama süre μ: hız 1/μ
             }[op.distribution]
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {call}"]
         if isinstance(op, DrawCount):
@@ -345,7 +368,7 @@ class RGenerator(Generator):
         if isinstance(op, DrawDiscrete):
             return [
                 f"# {op.comment}",
-                "# u ~ Tekdüze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
+                "# u ~ Tek-düze(0, 1); X, birikimli olasılığı F(x) u'yu ilk aşan değerdir (ters dağılım fonksiyonu)",
                 f"u <- runif(nrow({op.frame}))",
                 f"{op.name}_degerler <- {_vector(op.values)}",
                 f"esik <- cumsum({_vector(op.probabilities)})",
@@ -458,6 +481,10 @@ class RGenerator(Generator):
             return self._heatmap(op)
         if isinstance(op, DensityPlot):
             return self._density(op)
+        if isinstance(op, DensityCompare):
+            return self._density_compare(op)
+        if isinstance(op, PmfWithDensity):
+            return self._pmf_density(op)
         if isinstance(op, MonteCarlo):
             return self._monte_carlo(op)
         raise TypeError(f"R üreticisi bu işlemi tanımıyor: {type(op).__name__}")
@@ -576,7 +603,7 @@ class RGenerator(Generator):
         categories = f"{op.name}_kategoriler"
         lines = [
             f"# {op.comment}",
-            "# u ~ Tekdüze(0, 1); kategori, birikimli olasılığı u'yu ilk aşan kategoridir",
+            "# u ~ Tek-düze(0, 1); kategori, birikimli olasılığı u'yu ilk aşan kategoridir",
             f"u <- runif(nrow({op.frame}))",
             f"{categories} <- {_vector(op.categories)}",
         ]
@@ -841,21 +868,23 @@ class RGenerator(Generator):
 
     def _line(self, op: LineChart) -> list[str]:
         kind = "b" if op.markers else "l"
-        values = [f"{op.frame}${op.y}", *(name for name, _ in op.references)]
-        # Başvuru çizgileri dikey eksenin içinde kalsın: eksen seriyi ve başvuru değerlerini kapsar. Üstteki boşluk
+        values = [f"{op.frame}${op.y}", *(name for name, _ in op.references),
+                  *(f"{op.frame}${column}" for column, _ in op.bands)]
+        legend = bool(op.references or op.bands)
+        # Başvuru çizgileri ve bantlar dikey eksenin içinde kalsın: eksen hepsini kapsar. Üstteki boşluk
         # açıklama içindir; açıklama seriyi ve çizgileri örtmez.
-        limits = ['     ylim = c(aralik[1], aralik[2] + 0.3 * diff(aralik)), yaxt = "n",'] if op.references else []
+        limits = ['     ylim = c(aralik[1], aralik[2] + 0.3 * diff(aralik)), yaxt = "n",'] if legend else []
         setup = [
             f"aralik <- range(c({', '.join(values)}))",
             "# Üstteki boşluk açıklama için: seri ve başvuru çizgileri alttaki aralıkta kalır",
-        ] if op.references else []
+        ] if legend else []
         lines = [
             *setup,
             f'plot({op.frame}${op.x}, {op.frame}${op.y}, type = "{kind}", pch = 19, lwd = 2, col = "{PALETTE[0]}",',
             *limits,
             f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
         ]
-        if op.references:
+        if legend:
             lines.append("axis(2, at = pretty(aralik))  # eksen değerleri yalnız verinin aralığında")
             colors, ltys, labels = [f'"{PALETTE[0]}"'], ["1"], [text(op.y_label)]
             for index, (name, label) in enumerate(op.references):
@@ -864,6 +893,12 @@ class RGenerator(Generator):
                 colors.append(f'"{color}"')
                 ltys.append(lty)
                 labels.append(text(label))
+            for column, label in op.bands:  # boş etiket açıklamada gösterilmez
+                lines.append(f'lines({op.frame}${op.x}, {op.frame}${column}, col = "{PALETTE[2]}", lty = 2, lwd = 1.5)')
+                if label:
+                    colors.append(f'"{PALETTE[2]}"')
+                    ltys.append("2")
+                    labels.append(text(label))
             lines.append(
                 f'legend("top", legend = c({", ".join(labels)}), col = c({", ".join(colors)}), '
                 f'lty = c({", ".join(ltys)}), lwd = 2, bty = "n")'
@@ -1029,12 +1064,23 @@ class RGenerator(Generator):
             "                   function(x) hist(aralikta(x), breaks = kutular, plot = FALSE)$counts)",
         ]
         fills, labels, ltys, colors = [], [], [], []
+        curves = []
+        if op.curves:
+            lines += [
+                "# Beklenen sayı eğrisi: gözlem sayısı × kutu genişliği × f(x)",
+                f"eksen <- seq({lower}, {upper}, length.out = 401)",
+                f"beklenen <- length({series[0]}) * (kutular[2] - kutular[1])",
+            ]
+            for index, (distribution, a, b, _) in enumerate(op.curves, start=1):
+                lines.append(f"egri{index} <- beklenen * {density_expression(distribution, a, b, 'eksen')}")
+                curves.append(f"egri{index}")
+        top = f"max(sayimlar, {', '.join(curves)})" if curves else "max(sayimlar)"
         for index, (item, (_, label)) in enumerate(zip(series, op.columns)):
             color = f'adjustcolor("{PALETTE[index % len(PALETTE)]}", 0.55)'
             if index == 0:
                 lines += [
                     f'hist(aralikta({item}), breaks = kutular, col = {color}, border = "white",',
-                    f'     ylim = c(0, max(sayimlar)), xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}",',
+                    f'     ylim = c(0, {top}), xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}",',
                     f'     main = "{_quote(op.title)}")',
                 ]
             else:
@@ -1050,6 +1096,13 @@ class RGenerator(Generator):
             fills.append("NA")
             labels.append(text(label))
             ltys.append(lty)
+            colors.append(f'"{color}"')
+        for index, (name, (_, _, _, label)) in enumerate(zip(curves, op.curves), start=len(op.columns)):
+            color = PALETTE[index % len(PALETTE)]
+            lines.append(f'lines(eksen, {name}, col = "{color}", lwd = 2)')
+            fills.append("NA")
+            labels.append(text(label))
+            ltys.append("1")
             colors.append(f'"{color}"')
         return lines + [
             f"legend(\"topright\", legend = c({', '.join(labels)}),",
@@ -1136,12 +1189,16 @@ class RGenerator(Generator):
 
     @staticmethod
     def _density_call(op: DensityPlot, x: str) -> str:
-        a, b = E.format_number(op.first), E.format_number(op.second)
-        return f"dnorm({x}, {a}, {b})" if op.distribution == "normal" else f"dunif({x}, {a}, {b})"
+        return density_expression(op.distribution, op.first, op.second, x)
 
     def _density(self, op: DensityPlot) -> list[str]:
         low, high = (E.format_number(value) for value in op.x_range)
-        kind = "N(μ, σ²): ortalama, standart sapma" if op.distribution == "normal" else "U(a, b): alt ve üst sınır"
+        kind = {
+            "normal": "N(μ, σ²): ortalama, standart sapma",
+            "uniform": "U(a, b): alt ve üst sınır",
+            "exponential": "üstel: ortalama süre μ (R'de hız 1/μ)",
+            "gamma": "gamma: biçim ve oran",
+        }[op.distribution]
         curve = self._density_call(op, "eksen")
         top = f"1.08 * max({curve})" if op.y_max is None else E.format_number(op.y_max)
         lines = [
@@ -1173,6 +1230,48 @@ class RGenerator(Generator):
                 f'       col = c({", ".join(colors)}), lty = c({", ".join(ltys)}), lwd = 2, bty = "n")',
             ]
         return lines
+
+    def _density_compare(self, op: DensityCompare) -> list[str]:
+        low, high = (E.format_number(value) for value in op.x_range)
+        curves = [density_expression(distribution, a, b, "eksen") for distribution, a, b, _ in op.curves]
+        colors = _colors(len(op.curves))
+        top = "1.08 * max(egriler)" if op.y_max is None else E.format_number(op.y_max)
+        lines = [
+            "# Yoğunluk eğrileri aynı eksende",
+            f"eksen <- seq({low}, {high}, length.out = 401)",
+            *wrapped("egriler <- cbind(", curves, ")"),
+            f'matplot(eksen, egriler, type = "l", lty = 1, lwd = 2, col = {colors}, xaxs = "i",',
+            f"        ylim = c(0, {top}),",
+            f'        xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+            f"legend(\"topright\", legend = c({', '.join(text(label) for *_, label in op.curves)}),",
+            f'       col = {colors}, lty = 1, lwd = 2, bty = "n")',
+        ]
+        return lines
+
+    def _pmf_density(self, op: PmfWithDensity) -> list[str]:
+        x, y = f"{op.frame}${op.x}", f"{op.frame}${op.y}"
+        lines = [
+            f"eksen <- seq(min({x}) - 0.5, max({x}) + 0.5, length.out = 401)",
+            f"egri <- {density_expression(op.distribution, op.first, op.second, 'eksen')}",
+            f'plot({x}, {y}, type = "h", lwd = 8, lend = 1, col = adjustcolor("{PALETTE[0]}", 0.8),',
+            f"     ylim = c(0, 1.08 * max(c({y}, egri))),",
+            f'     xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
+            f'lines(eksen, egri, col = "{PALETTE[1]}", lwd = 2)',
+        ]
+        if op.shade:
+            pairs = ", ".join(f"c({E.format_number(a)}, {E.format_number(b)})" for a, b in op.shade)
+            curve = density_expression(op.distribution, op.first, op.second, "xa")
+            lines += [
+                f"for (aralik in list({pairs})) {{  # sürekli yaklaşımda tam sayı değerinin alanı",
+                "  xa <- seq(aralik[1], aralik[2], length.out = 200)",
+                f"  polygon(c(aralik[1], xa, aralik[2]), c(0, {curve}, 0),",
+                f'          col = adjustcolor("{PALETTE[1]}", 0.3), border = NA)',
+                "}",
+            ]
+        return lines + [
+            f'legend("topright", legend = c({text(op.bar_label)}, {text(op.curve_label)}),',
+            f'       col = c("{PALETTE[0]}", "{PALETTE[1]}"), lwd = c(8, 2), bty = "n")',
+        ]
 
     def _monte_carlo(self, op: MonteCarlo) -> list[str]:
         lines = [

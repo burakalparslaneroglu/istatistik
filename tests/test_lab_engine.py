@@ -361,3 +361,65 @@ def test_numeric_group_summary_keeps_the_numeric_order_in_r() -> None:
         GroupSummary("d", "x", (("toplam", "p", "sum"),), "g", (0, 1)),
     ))
     assert 'tapply(d$p, d$x, sum)[c("0", "1")]' in render_step(LabSpec("konu09", "t", "9", (step,)), 1, "R")
+
+
+def test_konu11_12_operations_in_the_app_and_both_languages() -> None:
+    """Tablo kuralı, üstel ve gamma yoğunlukları, üstel çekiliş, yoğunluk karşılaştırması, olasılık fonksiyonu ile
+    yaklaşım eğrisi, histogramda beklenen sayı eğrisi ve çizgi grafiğinde bant."""
+
+    from scipy import stats
+
+    from core.charts import figure_for
+    from core.codegen.base import render_script
+    from core.labs.spec import DensityCompare, Draw, LabSpec, LabStep, NoteRef, PmfWithDensity, Support
+    from core.labs.spec import Derive as DeriveOp
+
+    assert E.evaluate(E.roundto(E.normcdf(E.roundto(0.8333, 2)), 4)) == 0.7967  # Φ(0,83): tablo kuralı
+    x = np.linspace(0.1, 40, 50)
+    assert T.density("exponential", 15, 15, x) == pytest.approx(stats.expon.pdf(x, scale=15))
+    assert T.density("gamma", 5, 5, x[:10]) == pytest.approx(130.208333 * x[:10] ** 4 * np.exp(-5 * x[:10]),
+                                                              rel=1e-6)
+    with pytest.raises(ValueError, match="σ = μ"):
+        T.density("exponential", 15, 10, x)
+    ops = (
+        NewSample("s", 60, 217),
+        Draw("s", "t", "exponential", 5, 5, "Üstel(5)"),
+        DeriveOp("s", "n", E.seq(E.var("t")), "n"),
+        DeriveOp("s", "m", E.cummean(E.var("t")), "birikimli ortalama"),
+        DeriveOp("s", "ust", E.add(5, E.div(10, E.sqrt(E.var("n")))), "üst"),
+        DeriveOp("s", "alt", E.sub(5, E.div(10, E.sqrt(E.var("n")))), "alt"),
+        Scalar("se", E.div(15, E.sqrt(4)), "σ/√n", decimals=2),
+        DensityCompare((("normal", 50, 15, "X"), ("normal", 50, "se", "X̄, n = 4")), (0, 100), "Karşılaştırma", "x"),
+        Support("d", "x", 0, 10, "x"),
+        DeriveOp("d", "f", E.dbinom(E.var("x"), 10, 0.5), "f"),
+        PmfWithDensity("d", "x", "f", "normal", 5, "se", "x", "Olasılık", "Bin ve normal", "Binom", "Normal",
+                       shade=((5.5, 6.5),)),
+        LineChart("s", "n", "m", "n", "Ortalama", "Yol", markers=False, bands=(("ust", "Bant"), ("alt", ""))),
+        Histogram("s", (("t", "T"),), 30, 0, 30, "Süreler", "t", curves=(("exponential", 5, 5, "Beklenen"),)),
+    )
+    state = run_operations(ops)
+    assert list(state.frames["s"]["t"]) == list(np.random.default_rng(217).exponential(5, size=60))
+    compare = state.plots["DensityCompare:Karşılaştırma"]
+    assert list(compare.columns) == ["x", "f1", "f2"] and len(compare) == 401
+    assert compare["f2"].max() == pytest.approx(stats.norm.pdf(0, 0, 7.5), rel=1e-3)
+    pmf = state.plots["PmfWithDensity:Bin ve normal"]
+    assert set(pmf) == {"cubuk", "egri", "alan"} and pmf["alan"][0][:2] == (5.5, 6.5)
+    assert list(state.plots["LineChart:Yol"].columns) == ["n", "m", "ust", "alt"]
+    histogram = figure_for(ops[-1], state)
+    curve = [trace for trace in histogram.data if trace.name == "Beklenen"][0]
+    assert max(curve.y) == pytest.approx(60 * 1 * stats.expon.pdf(0, scale=5))  # gözlem × kutu genişliği × f(0)
+    line = figure_for(ops[-2], state)
+    assert [trace.showlegend for trace in line.data if trace.name in ("Bant", "")] == [True, False]
+    with pytest.raises(ValueError, match="σ = μ"):
+        run_operations((NewSample("s", 5, 1), Draw("s", "t", "exponential", 5, 4, "hatalı")))
+    spec = LabSpec("konu11", "t", "11", (LabStep(1, "t", NoteRef("11.1"), "t", operations=ops),))
+    python, r = render_script(spec, "Python"), render_script(spec, "R")
+    assert "rng.exponential(5, size=len(s))" in python and "rexp(nrow(s), rate = 1 / 5)" in r
+    assert "stats.norm.pdf(eksen, 50, se)" in python and "dnorm(eksen, 50, se)" in r
+    assert "fill_between" in python and 'type = "h"' in r
+    assert 'label="_nolegend_"' in python and "lty = 2" in r
+    assert "beklenen * stats.expon.pdf(eksen, scale=5)" in python and "dexp(eksen, rate = 1 / 5)" in r
+    rounded = LabSpec("konu11", "t", "11", (LabStep(1, "t", NoteRef("11.1"), "t", operations=(
+        Scalar("phi", E.roundto(E.normcdf(1.25), 4), "Φ(1,25)", decimals=4),)),))
+    assert "phi = np.round(stats.norm.cdf(1.25), 4)" in render_script(rounded, "Python")
+    assert "phi <- round(pnorm(1.25), 4)" in render_script(rounded, "R")

@@ -189,7 +189,7 @@ def _build_design(parameters: Parameters) -> tuple:
         Draw(frame, "u", "normal", 0, 1, "Katılım kararındaki diğer etkenler"),
         Derive(frame, "katilim_gozlem", E.compare("gt", E.add(E.mul(gamma, motivation), E.var("u")), 0),
                "Gözlemsel çalışma: öğrenci programa katılıp katılmayacağına kendisi karar verir"),
-        Draw(frame, "v", "uniform", 0, 1, "Yazı-tura için tekdüze sayı"),
+        Draw(frame, "v", "uniform", 0, 1, "Yazı-tura için tek-düze sayı"),
         Derive(frame, "katilim_deney", E.compare("lt", E.var("v"), 0.5),
                "Deney: katılımı yazı-tura belirler"),
         Draw(frame, "e", "normal", 0, 5, "Puandaki diğer etkenler"),
@@ -231,7 +231,7 @@ def _design_dgp(parameters: Parameters) -> tuple[str, ...]:
         r"M_i \sim N(0,1)\ \text{(gözlenmeyen motivasyon)}, \qquad u_i \sim N(0,1), \qquad e_i \sim N(0,\ 5^2)",
         rf"\text{{Gözlemsel çalışma: }} D_i = 1\{{\gamma M_i + u_i > 0\}}, \qquad \gamma = "
         rf"{number(parameters['gamma'], 2)}",
-        r"\text{Deney: } D_i = 1\{V_i < 0{,}5\}, \qquad V_i \sim \text{Tekdüze}(0,1)\ \text{(yazı-tura)}",
+        r"\text{Deney: } D_i = 1\{V_i < 0{,}5\}, \qquad V_i \sim \text{Tek-düze}(0,1)\ \text{(yazı-tura)}",
         rf"Y_i = 60 + \tau D_i + 8 M_i + e_i, \qquad \tau = {number(parameters['tau'], 1)}",
     )
 
@@ -311,7 +311,7 @@ def _sample(frame: str, size: int, car_share: float, name: str) -> tuple:
     car = E.var("arac")
     return (
         NewSample(frame, size, None),
-        Draw(frame, "v", "uniform", 0, 1, "Tekdüze sayı"),
+        Draw(frame, "v", "uniform", 0, 1, "Tek-düze sayı"),
         Derive(frame, "arac", E.compare("lt", E.var("v"), car_share), f"Özel araçla gelir mi? (olasılık {car_share})"),
         Draw(frame, "sure_arac", "normal", CAR_MEAN, CAR_SD, "Özel araçla ulaşım süresi"),
         Draw(frame, "sure_diger", "normal", OTHER_MEAN, OTHER_SD, "Diğer ulaşım biçimleriyle süre"),

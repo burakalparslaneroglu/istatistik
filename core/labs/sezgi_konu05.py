@@ -289,7 +289,7 @@ def _build_curvature(parameters: Parameters) -> tuple:
     a = round(2 * (1 - c), 10)
     return (
         NewSample("veri", n, SEED),
-        Draw("veri", "x", "uniform", -X_LIMIT, X_LIMIT, "X ~ Tekdüze(−3, 3)"),
+        Draw("veri", "x", "uniform", -X_LIMIT, X_LIMIT, "X ~ Tek-düze(−3, 3)"),
         Draw("veri", "hata", "normal", 0, 1, "Hata terimi ε ~ N(0, 1)"),
         Derive("veri", "y", E.add(E.add(E.mul(a, E.var("x")), E.mul(c, E.power(E.var("x"), 2))), E.var("hata")),
                "Y = aX + cX² + ε"),
@@ -304,7 +304,7 @@ def _curvature_dgp(parameters: Parameters) -> tuple[str, ...]:
     a = 2 * (1 - c)
     return (
         rf"Y = aX + cX^2 + \varepsilon, \qquad a = 2(1 - c) = {number(a, 1)}, \qquad c = {number(c, 1)}",
-        rf"X \sim \text{{Tekdüze}}(-3,\ 3), \qquad \varepsilon \sim N(0,\ 1), \qquad n = {n}, \qquad "
+        rf"X \sim \text{{Tek-düze}}(-3,\ 3), \qquad \varepsilon \sim N(0,\ 1), \qquad n = {n}, \qquad "
         rf"\rho = \frac{{3a}}{{\sqrt{{3(3a^2 + 7{{,}}2c^2 + 1)}}}} = {number(_true_correlation(c), 3)}",
     )
 

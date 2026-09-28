@@ -12,13 +12,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from core.codegen.base import HEAT_LOW, PALETTE, REFERENCE_COLORS
-from core.labs.runner import LabState, plot_key
+from core.labs.runner import LabState, parameter, plot_key
 from core.labs.spec import (
     CHARTS,
     BarChart,
     BoxPlot,
     ClassHistogram,
     CompareBarChart,
+    DensityCompare,
     DensityPlot,
     DotPlot,
     GroupedBarChart,
@@ -28,6 +29,7 @@ from core.labs.spec import (
     MosaicChart,
     Operation,
     PieChart,
+    PmfWithDensity,
     ScatterPlot,
     TreeDiagram,
 )
@@ -169,7 +171,14 @@ def _line(op: LineChart, data: pd.DataFrame, state: LabState) -> go.Figure:
                       "dash": ("dash", "dot", "dashdot")[index % 3]},
             )
         )
-    if op.references:
+    for column, label in op.bands:  # ör. μ ± 2σ/√n bandının kenarları; boş etiket açıklamada gösterilmez
+        figure.add_trace(
+            go.Scatter(
+                x=x, y=data[column], mode="lines", name=label, showlegend=bool(label), hoverinfo="skip",
+                line={"color": PALETTE[2], "width": 1.8, "dash": "dash"},
+            )
+        )
+    if op.references or op.bands:
         figure.update_layout(legend={"orientation": "h", "y": -0.25})
     unique = np.unique(x)
     steps = np.diff(unique)
@@ -245,6 +254,19 @@ def _histogram(op: Histogram, data: pd.DataFrame, state: LabState) -> go.Figure:
                 line={"color": REFERENCE_COLORS[index % len(REFERENCE_COLORS)], "width": 2.5, "dash": "dash"},
             )
         )
+    if op.curves:  # beklenen sayı: gözlem sayısı × kutu genişliği × f(x)
+        grid = np.linspace(op.lower, op.upper, 401)
+        count = data[op.columns[0][0]].notna().sum()
+        for index, (distribution, first, second, label) in enumerate(op.curves, start=len(op.columns)):
+            values = density(distribution, parameter(first, state), parameter(second, state), grid)
+            figure.add_trace(
+                go.Scatter(
+                    x=grid, y=count * (edges[1] - edges[0]) * values, mode="lines", name=label,
+                    line={"color": PALETTE[index % len(PALETTE)], "width": 2.5},
+                    hovertemplate=f"{label}<br>%{{x:.2f}}: %{{y:.1f}}<extra></extra>",
+                )
+            )
+        figure.update_layout(legend={"orientation": "h", "y": -0.25})
     figure.update_layout(barmode="overlay", yaxis2={"overlaying": "y", "range": [0, 1], "visible": False})
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
@@ -437,6 +459,56 @@ def _density(op: DensityPlot, data: pd.DataFrame) -> go.Figure:
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
+def _density_compare(op: DensityCompare, data: pd.DataFrame) -> go.Figure:
+    """Aynı eksende birden fazla yoğunluk; renkler üretilen koddaki sırayla."""
+
+    figure = go.Figure()
+    for index, (_, _, _, label) in enumerate(op.curves):
+        figure.add_trace(
+            go.Scatter(
+                x=data["x"], y=data[f"f{index + 1}"], mode="lines", name=label,
+                line={"color": PALETTE[index % len(PALETTE)], "width": 2.5},
+                hovertemplate=f"{label}<br>x = %{{x:.2f}}<br>f(x) = %{{y:.4f}}<extra></extra>",
+            )
+        )
+    figure.update_xaxes(range=list(op.x_range))
+    if op.y_max is None:
+        figure.update_yaxes(rangemode="tozero")
+    else:
+        figure.update_yaxes(range=[0, op.y_max])
+    figure.update_layout(legend={"orientation": "h", "y": -0.25})
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
+def _pmf_density(op: PmfWithDensity, data: dict) -> go.Figure:
+    """Kesikli olasılıklar çubuk, sürekli yaklaşım eğri; boyalı alan süreklilik düzeltmesinin aralığıdır."""
+
+    bars, curve = data["cubuk"], data["egri"]
+    figure = go.Figure(
+        go.Bar(
+            x=bars[op.x], y=bars[op.y], width=0.6, name=op.bar_label, marker={"color": _rgba(PALETTE[0], 0.8)},
+            hovertemplate="x = %{x}<br>P(X = x) = %{y:.4f}<extra></extra>",
+        )
+    )
+    for low, high, values in data["alan"]:
+        x = np.linspace(low, high, 200)
+        figure.add_trace(
+            go.Scatter(
+                x=np.r_[low, x, high], y=np.r_[0.0, values, 0.0], fill="toself", mode="lines", line={"width": 0},
+                fillcolor=_rgba(PALETTE[1], 0.3), hoverinfo="skip", showlegend=False,
+            )
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=curve["x"], y=curve["f"], mode="lines", name=op.curve_label,
+            line={"color": PALETTE[1], "width": 2.5}, hovertemplate="x = %{x:.2f}<br>f(x) = %{y:.4f}<extra></extra>",
+        )
+    )
+    figure.update_yaxes(rangemode="tozero")
+    figure.update_layout(legend={"orientation": "h", "y": -0.25}, bargap=0)
+    return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
+
+
 def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Figure:
     """Bir grafik işleminin Plotly karşılığı; ``label`` seri başlıkları için Türkçe ad verir."""
 
@@ -474,4 +546,8 @@ def figure_for(op: Operation, state: LabState, label=lambda name: name) -> go.Fi
         return _tree(op, data)
     if isinstance(op, DensityPlot):
         return _density(op, data)
+    if isinstance(op, DensityCompare):
+        return _density_compare(op, data)
+    if isinstance(op, PmfWithDensity):
+        return _pmf_density(op, data)
     raise TypeError(f"Grafik türü tanınmıyor: {type(op).__name__}")

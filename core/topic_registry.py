@@ -52,9 +52,15 @@ TOPICS: tuple[TopicMetadata, ...] = (
         "Sürekli bir değişkende olasılık neden eğri altındaki alandır ve normal dağılımda z-dönüşümü farklı "
         "ölçekleri nasıl ortak bir dile çevirir?",
     ),
-    TopicMetadata("konu11", 11, "Normal Olasılıklar ve Üstel Dağılım", "Normal Olasılıklar ve Üstel Dağılım"),
+    TopicMetadata(
+        "konu11", 11, "Normal Olasılıklar ve Üstel Dağılım", "Normal Olasılıklar ve Üstel Dağılım",
+        "Normal eğri altındaki bir alan tablodan nasıl okunur, binom olasılıkları ne zaman normal eğriyle "
+        "yaklaştırılır ve bir sonraki olaya kadar geçen süre hangi dağılımla modellenir?",
+    ),
     TopicMetadata(
         "konu12", 12, "Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları", "Örnekleme ve Örnekleme Dağılımları",
+        "Tek bir örneklemden hesaplanan ortalama ya da oran anakütle hakkında ne söyler ve aynı istatistik "
+        "örneklemden örnekleme ne kadar, hangi dağılımla değişir?",
     ),
 )
 

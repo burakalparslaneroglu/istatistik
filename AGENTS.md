@@ -7,7 +7,7 @@
 5. `app.py` yalnız ortak kabuğu, konu seçimini, kod dili seçimini ve seçili konunun `render()` çağrısını içerir.
 6. Çalışma anında LLM, dış AI API veya gizli anahtar kullanılmaz.
 7. Rassallık `np.random.default_rng(seed)` ile yönetilir; tohum üretilen kodda görünür. Bir deneyde tek üreteç vardır ve bütün çekilişler işlem sırasıyla ondan yapılır.
-8. Her grafikte eksen adı, gerektiğinde birim ve legend bulunur. Yeni konularda `st.plotly_chart` yalnız `core/charts.show_figure` içinden çağrılır (eski konularda `core/ui_components.render_plotly`). Sayılar Türkçe biçimde gösterilir: ondalık virgül, yüzde işareti sayıdan önce (%62,5).
+8. Her grafikte eksen adı, gerektiğinde birim ve legend bulunur. `st.plotly_chart` yalnız `core/charts.show_figure` içinden çağrılır. Sayılar Türkçe biçimde gösterilir: ondalık virgül, yüzde işareti sayıdan önce (%62,5).
 9. Betimsel sonuç yalnız gözlenen veriyi betimler; anakütleye genelleme örneklemin nasıl seçildiği açık değilse yapılmaz. Birlikte hareket nedensellik diye sunulmaz.
 10. Ham teknik değişken adları öğrenci arayüzünde açıklamasız gösterilmez (`LabSpec.labels`).
 11. Private ders materyali ve lisansı doğrulanmamış veri public repoya commit edilmez. `references_private/` izlenmez.

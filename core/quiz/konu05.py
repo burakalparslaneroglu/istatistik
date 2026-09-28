@@ -52,7 +52,7 @@ QUESTIONS = (
             "Bir hastanede bekleme sürelerinin çoğu 5–15 dakikadır; az sayıda hasta 60–90 dakika beklemiştir. "
             "Bekleme sürelerinin dağılımı en iyi nasıl adlandırılır?"
         ),
-        answer=MultipleChoice(("Sağa çarpık", "Sola çarpık", "Simetrik", "Tekdüze"), correct=0),
+        answer=MultipleChoice(("Sağa çarpık", "Sola çarpık", "Simetrik", "Tek-düze"), correct=0),
         explanation=(
             "Uzun kuyruk büyük değerlere doğru uzanır; çarpıklık kuyruğun yönüyle adlandırıldığı için dağılım "
             "sağa çarpıktır. Değerlerin çoğunun solda toplanması adlandırmayı belirlemez (§5.6, Şekil 5.7)."

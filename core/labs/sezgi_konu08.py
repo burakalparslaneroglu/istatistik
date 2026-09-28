@@ -117,7 +117,7 @@ LONG_RUN = SimExperiment(
     ),
     dgp=_long_run_dgp,
     dgp_note=(
-        "Her çekiliş Tablo 8.1'deki dağılımdan, öncekilerden bağımsız olarak yapılır: u ~ Tekdüze(0, 1) çekilir ve "
+        "Her çekiliş Tablo 8.1'deki dağılımdan, öncekilerden bağımsız olarak yapılır: u ~ Tek-düze(0, 1) çekilir ve "
         "X, birikimli olasılığı F(x) u'yu ilk aşan değerdir. Tohum 217'dir; n = 100 notlardaki Şekil 8.8'i birebir "
         "üretir."
     ),
@@ -269,8 +269,8 @@ def _build_joint(parameters: Parameters) -> tuple:
     return (
         NewSample("gun", n, SEED),
         DrawDiscrete("gun", "x", REQUEST_VALUES, REQUEST_PROBABILITIES, "X: günlük teklif talebi sayısı"),
-        Draw("gun", "u1", "uniform", 0, 1, "Birinci talep için u ~ Tekdüze(0, 1)"),
-        Draw("gun", "u2", "uniform", 0, 1, "İkinci talep için u ~ Tekdüze(0, 1)"),
+        Draw("gun", "u1", "uniform", 0, 1, "Birinci talep için u ~ Tek-düze(0, 1)"),
+        Draw("gun", "u2", "uniform", 0, 1, "İkinci talep için u ~ Tek-düze(0, 1)"),
         Derive(
             "gun", "y",
             E.add(E.mul(E.compare("ge", E.var("x"), 1), E.compare("lt", E.var("u1"), q)),

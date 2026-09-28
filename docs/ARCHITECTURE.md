@@ -13,7 +13,7 @@ sezgi kurar ve kavramları sınar.
 - `topics/`: Streamlit bileşenleri ve öğrenciye gösterilen metin.
 - `tests/`: sözleşme, sayısal doğruluk, üretilen kod ve AppTest denetimleri.
 
-## Yeni yapı (Konu 1–10)
+## Yeni yapı (Konu 1–12)
 
 | Dosya | Görev |
 |---|---|
@@ -30,16 +30,17 @@ sezgi kurar ve kavramları sınar.
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
-Eski yapıdaki konular (11–12) kendi `core/topicNN_logic.py` modüllerini, `core/question_engine.py`'yi ve
-`core/ui_components.render_plotly`'yi kullanır. Bir konu yeni yapıya taşındığında eski modülü ve testleri
-aynı blokta kaldırılır.
+Eski yapı (konuya özel `core/topicNN_logic.py` modülleri, `core/question_engine.py` ve
+`core/ui_components.render_plotly`) Konu 11–12'nin taşınmasıyla kaldırıldı; `core/ui_components.py` yalnız stil
+dosyasını yükler.
 
 ## Uygulama akışı
 
 Bir konu uygulaması tek bir `LabSpec` tanımıdır ve dört çıktıyı birlikte besler:
 
 1. `topics/lab_ui.py` adımları, tabloları, grafikleri ve kodu gösterir. Her adımda o adımın sonundaki durum
-   gösterilir; sonraki adımların eklediği sütunlar görünmez.
+   gösterilir; sonraki adımların eklediği sütunlar görünmez. Satır içi veri, aynı adımda bütün sütunlarını
+   gösteren bir `ShowFrame` ile sonuçlanıyorsa yalnız girdi sütunlarıyla gösterilir (tablo iki kez görünmez).
 2. `core/labs/runner.py` hesabı yapar; her `Check` notlarda basılı bir sayıdır ve tolerans basılı basamak
    sayısıdır (0,5 × 10⁻ᵈ).
 3. `core/codegen/` aynı işlemleri Python ve R'ye çevirir; tam betik sonunda sonuçları notlardaki sayılarla
@@ -112,7 +113,7 @@ tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde
   her yolda aynı olmalıdır). Ağaçta eksen yoktur (`AXISLESS_CHARTS`).
 - `HeatMap`: tablonun her hücresi bir kare; ilk satır üstte, sütun adları üstte (notlardaki ortak dağılım
   tablosu gibi). Renk sıfırda ana rengin açık tonundan (`HEAT_LOW`) başlar; sıfır hücreler de zeminden ayrılır.
-- `DrawDiscrete`: kesikli rassal değişken; ters dağılım fonksiyonu yöntemi (u ~ Tekdüze(0, 1), X birikimli
+- `DrawDiscrete`: kesikli rassal değişken; ters dağılım fonksiyonu yöntemi (u ~ Tek-düze(0, 1), X birikimli
   olasılığı u'yu ilk aşan değer), `DrawCategory` ile aynı kural, sonuç sayıdır.
 - Sütun grafiğinde sayısal kategoriler (ör. x = 0, 1, 2) Python kodunda metne çevrilir (`astype(str)`):
   matplotlib sayısal konumlara ara eksen işaretleri koyardı. R'de satır içi veride negatif değer varsa etiket
@@ -146,15 +147,36 @@ tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde
   9.1'deki N = 40, r = 4, n = 8; N(70, 10²), U(120, 140)). Poisson deneyinde gösterilen değerler
   0, …, ⌈2λ + 4√λ + 6⌉ aralığıdır; bu sınırı aşma olasılığı kaydırıcının her değerinde 10⁻¹⁰'dan küçüktür.
 
+### Normal olasılıklar, üstel dağılım ve örnekleme dağılımları (Konu 11–12)
+
+- `roundto(a, d)`: notlardaki tablo kuralı; z iki, Φ(z) dört ondalık basamağa yuvarlanır (Python `np.round`,
+  R `round`). Tablo kuralıyla bulunan sonuç ve yuvarlamasız sonuç birlikte gösterilir (ör. 0,5859 ve 0,5858).
+- Yoğunluklar (`DENSITIES`): normal (μ, σ), tek-düze (a, b), üstel (μ, σ = μ; scipy `expon.pdf(x, scale=μ)`,
+  R `dexp(x, rate = 1 / μ)`) ve gamma (biçim k, oran r; scipy `gamma.pdf(x, k, scale=1 / r)`, R
+  `dgamma(x, shape = k, rate = r)`). Grafik parametreleri sayı ya da önceden hesaplanmış bir skalerin adıdır.
+- `Draw` üstel: Python `rng.exponential(μ, size=…)`, R `rexp(n, rate = 1 / μ)`; σ = μ denetlenir.
+- `DensityCompare`: aynı eksende birden çok yoğunluk (ör. bireysel X ile farklı n'lerde X̄). `PmfWithDensity`:
+  kesikli olasılık fonksiyonunun çubukları ve sürekli yaklaşım eğrisi; boyalı aralık süreklilik düzeltmesidir
+  (X = 12 → 11,5–12,5).
+- `Histogram(curves=…)`: beklenen sayı eğrisi, gözlem sayısı × kutu genişliği × f(x); histogramla aynı ölçektedir.
+  `LineChart(bands=…)`: aynı çerçeveden kesikli çizilen ek seriler (ör. μ ± 2σ/√n bandının iki kenarı); boş
+  etiketli seri açıklamada gösterilmez.
+- Konu 12 Deney 1'in varsayılan ayarları notlardaki Şekil 12.13'ün veri üretim sürecidir (N(50, 20²), n = 100,
+  tohum 217); şekildeki yol Python'da birebir üretilir. Deney 2'nin anakütlesi Şekil 12.8'deki üstel dağılımdır
+  ve X̄'in tam dağılımı gamma(n, n) eğrisiyle gösterilir. Deney 3'te histogramın her kutusu p̂'nin tek bir
+  değerini içerir (sınırlar (k ± 0,5)/n).
+- Önceki konuların ürettiği kod bu eklemelerden etkilenmez. Yalnız "Tekdüze" yazımı notlardaki "tek-düze"
+  yazımına çevrildi; Konu 1–8 Sezgi kodunun açıklama satırları bu kelimede değişir.
+
 ## Sezgi deneyleri
 
 Bir deney (`SimExperiment`), kaydırıcı değerlerinden işlem listesi üreten bir tanımdır. Deneyde tek bir
-`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tekdüze, beta, gamma), `DrawCount` (binom, Poisson,
-hipergeometrik) ve `DrawCategory` çekilişleri
-işlem sırasıyla ondan yapılır. Kategorik çekiliş, her gözlem için u ~ Tekdüze(0, 1) çekip birikimli olasılığı
-u'yu ilk aşan kategoriyi seçer (Python `np.searchsorted(..., side="right")`, R `findInterval(u, esik) + 1`; son eşik
-yuvarlama hatasına karşı tam 1'dir). Üretilen Python kodu aynı sırayla çektiği için uygulamadaki sayıların
-aynısını verir. R aynı dağılımdan farklı çekiliş yapar.
+`np.random.default_rng(seed)` üreteci vardır; `Draw` (normal, tek-düze, beta, gamma, üstel), `DrawCount` (binom,
+Poisson, hipergeometrik) ve `DrawCategory` çekilişleri işlem sırasıyla ondan yapılır. Kategorik çekiliş, her gözlem
+için u ~ Tek-düze(0, 1) çekip birikimli olasılığı u'yu ilk aşan kategoriyi seçer (Python
+`np.searchsorted(..., side="right")`, R `findInterval(u, esik) + 1`; son eşik yuvarlama hatasına karşı tam 1'dir).
+Üretilen Python kodu aynı sırayla çektiği için uygulamadaki sayıların aynısını verir. R aynı dağılımdan farklı
+çekiliş yapar.
 
 `MonteCarlo` bir işlem bloğunu yeni çekilişlerle tekrarlar; üreteç döngüden önce bir kez tohumlanır.
 `Histogram` sonuç tablosunun sütunlarını aynı kutularla iki dilde ve uygulamada çizer.
@@ -187,11 +209,13 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
 - `tests/test_topic_contracts.py`: konu sırası, render fonksiyonları, yeni yapıya taşınan konuların sözleşmesi.
 - `tests/test_app_smoke.py`: AppTest ile kabuk, adımlar, deneyler, soru kontrolü, konu ve kod dili geçişi.
 - `tests/test_konu01_02_content.py`, `tests/test_konu03_04_content.py`, `tests/test_konu05_06_content.py`,
-  `tests/test_konu07_08_content.py`, `tests/test_konu09_10_content.py`: notlarla veri uyumu, yüzdelik kuralının
-  Hyndman–Fan tip 6 ile özdeşliği, Konu 6 Deney 1'in Şekil 6.6'yı ve Konu 8 Deney 1'in Şekil 8.8'i birebir
-  üretmesi, mozaik ve ağaç kuralları, kesikli çekilişin ters dağılım fonksiyonu, Şekil 9.6 ve 9.8'in basılı
-  değerleri, dikdörtgen toplamlarının normal alanları vermesi ve deneylerin istatistiksel doğruluğu.
-- `tests/test_lab_engine.py`: tablo hesapları, ifade dili (dağılım fonksiyonları, tek terimli eksi), yeni
-  işlemler (`Support`, `RowSum`, `Rectangles`, `DrawCount`, `DensityPlot`) ve kod üreticisi yardımcıları.
+  `tests/test_konu07_08_content.py`, `tests/test_konu09_10_content.py`, `tests/test_konu11_12_content.py`:
+  notlarla veri uyumu, yüzdelik kuralının Hyndman–Fan tip 6 ile özdeşliği, Konu 6 Deney 1'in Şekil 6.6'yı,
+  Konu 8 Deney 1'in Şekil 8.8'i ve Konu 12 Deney 1'in Şekil 12.13'ü birebir üretmesi, mozaik ve ağaç kuralları,
+  kesikli çekilişin ters dağılım fonksiyonu, Şekil 9.6, 9.8 ve 11.7'nin basılı değerleri, Tablo 11.1'in bütün
+  hücreleri, dikdörtgen toplamlarının normal alanları vermesi ve deneylerin istatistiksel doğruluğu.
+- `tests/test_lab_engine.py`: tablo hesapları, ifade dili (dağılım fonksiyonları, tek terimli eksi, tablo
+  kuralı), yeni işlemler (`Support`, `RowSum`, `Rectangles`, `DrawCount`, `DensityPlot`, üstel çekiliş,
+  `DensityCompare`, `PmfWithDensity`, histogram eğrisi, çizgi grafiğinde bant) ve kod üreticisi yardımcıları.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

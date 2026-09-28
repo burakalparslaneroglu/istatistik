@@ -27,6 +27,7 @@ from core.labs.spec import (
     Count,
     CrossTab,
     Derive,
+    DensityCompare,
     DensityPlot,
     DotPlot,
     Draw,
@@ -54,6 +55,7 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    PmfWithDensity,
     Rectangles,
     RowSum,
     Scalar,
@@ -163,6 +165,12 @@ def _scalar(state: LabState):
     return lookup
 
 
+def parameter(value: float | str, state: LabState) -> float:
+    """Grafik parametresi: sayı ya da önceden hesaplanmış bir skalerin adı."""
+
+    return float(state.scalars[value]) if isinstance(value, str) else float(value)
+
+
 def evaluate_scalar(expression: E.Expr, state: LabState) -> float:
     return float(E.evaluate(expression, scalar=_scalar(state)))
 
@@ -250,6 +258,10 @@ def execute(op: Operation, state: LabState) -> None:
             frame[op.name] = rng.beta(op.first, op.second, size=len(frame))
         elif op.distribution == "gamma":
             frame[op.name] = rng.gamma(op.first, op.second, size=len(frame))
+        elif op.distribution == "exponential":
+            if op.second != op.first:
+                raise ValueError("Üstel dağılımda σ = μ'dür.")
+            frame[op.name] = rng.exponential(op.first, size=len(frame))
         else:
             raise ValueError(f"Desteklenmeyen dağılım: {op.distribution}")
     elif isinstance(op, DrawCount):
@@ -340,7 +352,7 @@ def execute(op: Operation, state: LabState) -> None:
     elif isinstance(op, LineChart):
         # Kaynak bir veri çerçevesi ya da sonuç tablosu olabilir (ör. kümülatif yüzde eğrisi).
         frame = state.frames[op.frame] if op.frame in state.frames else without_total(state.tables[op.frame])
-        state.plots[plot_key(op)] = frame[[op.x, op.y]].copy()
+        state.plots[plot_key(op)] = frame[[op.x, op.y, *(column for column, _ in op.bands)]].copy()
     elif isinstance(op, ScatterPlot):
         state.plots[plot_key(op)] = state.frames[op.frame][[op.x, op.y]].copy()
     elif isinstance(op, BoxPlot):
@@ -368,6 +380,22 @@ def execute(op: Operation, state: LabState) -> None:
         state.plots[plot_key(op)] = without_total(state.tables[op.table]).astype(float)
     elif isinstance(op, DensityPlot):
         state.plots[plot_key(op)] = T.density_grid(op.distribution, op.first, op.second, op.x_range)
+    elif isinstance(op, DensityCompare):
+        x = np.linspace(op.x_range[0], op.x_range[1], 401)
+        curves = {"x": x}
+        for index, (distribution, first, second, _) in enumerate(op.curves, start=1):
+            curves[f"f{index}"] = T.density(distribution, parameter(first, state), parameter(second, state), x)
+        state.plots[plot_key(op)] = pd.DataFrame(curves)
+    elif isinstance(op, PmfWithDensity):
+        frame = state.frames[op.frame]
+        first, second = parameter(op.first, state), parameter(op.second, state)
+        x = np.linspace(frame[op.x].min() - 0.5, frame[op.x].max() + 0.5, 401)
+        state.plots[plot_key(op)] = {
+            "cubuk": frame[[op.x, op.y]].copy(),
+            "egri": pd.DataFrame({"x": x, "f": T.density(op.distribution, first, second, x)}),
+            "alan": [(low, high, T.density(op.distribution, first, second, np.linspace(low, high, 200)))
+                     for low, high in op.shade],
+        }
     elif isinstance(op, TreeDiagram):
         state.plots[plot_key(op)] = T.tree_layout(state.frames[op.frame], op.first, op.second, op.first_p, op.second_p)
     elif isinstance(op, MonteCarlo):
