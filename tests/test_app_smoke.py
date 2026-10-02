@@ -91,3 +91,96 @@ def test_topic_switch_keeps_text_scale_and_code_language() -> None:
     assert app.session_state["text_scale"] == 1.2
     assert app.session_state["code_language"] == "R"
     assert "Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi" in _markdown(app)
+
+
+def test_lab_source_selector_offers_the_alternative_example() -> None:
+    app = _run_app()
+    assert app.segmented_control(key="konu01_lab_kaynak").value == "notlar"
+    for topic, steps in (("konu01", 5), ("konu02", 12)):
+        app.radio(key="selected_topic").set_value(topic).run()
+        app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
+        assert "Kurgusal veri" in _markdown(app)
+        for language in ("Python", "R"):
+            app.segmented_control(key="code_language").set_value(language).run()
+            for number in range(1, steps + 1):
+                app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
+                assert not app.exception, (topic, language, number)
+                assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
+    app.radio(key="selected_topic").set_value("konu03").run()
+    assert not any(widget.key == "konu03_lab_kaynak" for widget in app.segmented_control)
+
+
+def test_own_data_upload_runs_every_step() -> None:
+    from core.labs import kendi_veri as K
+    from core.labs.ornekler import VARIANTS
+
+    app = _run_app()
+    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    roles = {
+        "konu01": {"sayisal": "Günlük ciro (bin TL)", "kimlik": "Kafe", "ikili": "Hedef durumu"},
+        "konu02": {"satir": "Şube", "secenek": "Şube", "altgrup": "Sipariş türü", "sonuc": "Memnuniyet"},
+    }
+    for topic, steps in (("konu01", 5), ("konu02", 12)):
+        app.radio(key="selected_topic").set_value(topic).run()
+        app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+        assert any("dosya yükleyin" in item.value for item in app.info)
+        data = K.sample_excel(VARIANTS[topic].custom.sample())
+        app.file_uploader(key=f"{topic}_kendi_dosya").upload(f"{topic}.xlsx", data, mime).run()
+        for role, column in roles[topic].items():
+            app.selectbox(key=f"{topic}_kendi_rol_{role}").set_value(column).run()
+        assert not app.exception and not app.error, [item.value for item in app.error]
+        for number in range(1, steps + 1):
+            app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
+            assert not app.exception, (topic, number)
+            assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
+            assert not any("sütun seçin" in item.value for item in app.markdown), (topic, number)
+
+
+def test_own_data_survives_a_source_switch_and_follows_the_file_name() -> None:
+    """Kaynak değişince Streamlit widget durumunu siler; dosya ve seçimler yine de korunur. Aynı içerik başka adla
+    yüklenince üretilen kod yeni adı kullanır."""
+
+    from core.labs import kendi_veri as K
+    from core.labs.ornekler import VARIANTS
+
+    app = _run_app()
+    topic, mime = "konu02", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    data = K.sample_excel(VARIANTS[topic].custom.sample())
+    app.radio(key="selected_topic").set_value(topic).run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key=f"{topic}_kendi_dosya").upload("ilk.xlsx", data, mime).run()
+    app.selectbox(key=f"{topic}_kendi_rol_satir").set_value("Sipariş türü").run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("notlar").run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    assert app.selectbox(key=f"{topic}_kendi_rol_satir").value == "Sipariş türü"
+    assert any("Kullanılan dosya: ilk.xlsx" in item.value for item in app.caption)
+    assert "Yüklediğiniz veri dosyası: ilk.xlsx" in _markdown(app)
+    app.button(key=f"{topic}_kendi_kaldir").click().run()
+    assert any("dosya yükleyin" in item.value for item in app.info)
+    app.file_uploader(key=f"{topic}_kendi_dosya").upload("ikinci.xlsx", data, mime).run()
+    assert not app.exception and "Yüklediğiniz veri dosyası: ikinci.xlsx" in _markdown(app)
+
+
+def test_own_data_labels_are_escaped_and_removal_clears_the_session() -> None:
+    """Kullanıcının adları başlık ve etiketlerde Markdown/KaTeX olarak yorumlanmaz; dosya kaldırılınca okunan veri
+    oturum belleğinde kalmaz."""
+
+    rows = ["Puan;Fiyat"] + [f"{50 + 7 * index % 23};{'$5 ve üstü' if index % 2 else '$5 altı'}" for index in range(8)]
+    data = ("\n".join(rows) + "\n").encode()
+    app = _run_app()
+    topic = "konu01"
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key=f"{topic}_kendi_dosya").upload("fiyat_listesi.csv", data, "text/csv").run()
+    assert app.selectbox(key=f"{topic}_kendi_rol_ikili").value == "Fiyat"
+    app.segmented_control(key=f"{topic}_lab_step").set_value(1).run()
+    assert "Yüklediğiniz veri dosyası: fiyat\\_listesi.csv" in _markdown(app)
+    app.segmented_control(key=f"{topic}_lab_step").set_value(2).run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    headings = [item.value for item in app.markdown if "kodlaması" in item.value]
+    assert headings and all("\\$5" in item and "$5" not in item.replace("\\$5", "") for item in headings)
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("notlar").run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    app.button(key=f"{topic}_kendi_kaldir").click().run()
+    left = [str(key) for key in app.session_state.filtered_state if str(key).startswith(f"{topic}_kendi_")]
+    assert not any(key.endswith(("_tablo", "_uygulama", "_yuklenen", "_ozet")) for key in left), left

@@ -28,6 +28,10 @@ sezgi kurar ve kavramları sınar.
 | `core/quiz/` | Soru türleri, notlandırma, güvenli formül okuma ve konu soru setleri |
 | `core/charts.py` | Plotly grafikleri; `show_figure` tek `st.plotly_chart` çağrısıdır ve eksen adı ister |
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
+| `core/labs/ornek.py`, `core/labs/ornekler.py` | Uygulama sekmesinin ek veri kaynakları: örnek (`Case`), rol (`Role`), kendi verin tanımı (`CustomLab`), seçimlerden örneğe (`custom_case`) ve kayıt |
+| `core/labs/ornek_konuNN.py` | Konunun genel uygulaması (notlardaki adımlar, verisi değiştirilebilir), kurgusal alternatif örnek ve kendi verin rolleri |
+| `core/labs/kendi_veri.py` | Yüklenen dosyayı okuma (Excel; CSV için ayırıcı, ondalık işareti ve kodlamanın algılanması), kodda kullanılacak sütun adları, Türkçe sıralama, temizleme ve doğrulama |
+| `topics/kendi_veri_ui.py` | Kendi verin paneli: dosya yükleme, örnek dosya, sütun ve kategori seçimi, tür tablosu |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
 Eski yapı (konuya özel `core/topicNN_logic.py` modülleri, `core/question_engine.py` ve
@@ -54,6 +58,57 @@ tablolar bu veriden yeniden sayılır; yani notlardaki sayılar girdi değil, he
 
 Çapraz tabloda yüzde türü paydayı belirler: `percent="satir"` her satırı, `percent="sutun"` her sütunu 100'e
 tamamlar. `Toplam` satırı ve sütunu iki dilde aynı adla eklenir; grafiklerde çizilmez.
+
+## Veri kaynağı: notlardaki örnek, alternatif örnek, kendi verin
+
+Kayıtta (`core/labs/ornekler.py`) ek kaynağı olan konularda Uygulama sekmesinin en üstünde üç seçenek vardır.
+Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üretilen kodu ve kontrolleri değişmez.
+
+- **Genel uygulama** (`core/labs/ornek_konuNN.build`): notlardaki adımlar aynı numaralar ve aynı bölüm bağlarıyla,
+  fakat veri bir `Case`'ten gelir. `Case` veriyi kuran işlemleri, temizlenmiş veriyi, rolleri (rol → sütun),
+  ekranda görünen adları, kategori sıralarını ve seçilen kategorileri taşır. Metinler veriden kurulur: sayı ve
+  kategori adları metne eklenir, fakat değişken bir sayıya ya da kategori adına Türkçe ek getirilmez ("Şube =
+  Merkez", "{sayı} gözlem" gibi kalıplar).
+- **Alternatif örnek:** genel uygulamanın kurgusal bir veriyle kurulmuş hâlidir (satır içi veri). Veri,
+  notlardaki öğretim noktasını gösterecek biçimde seçilir (ör. Konu 2'de Simpson paradoksu, Konu 1'de 25 bin
+  TL hedefi).
+- **Kendi verin:** öğrenci Excel (.xlsx) ya da CSV dosyası yükler, her rol için bir sütun seçer. Gereken rol
+  seçilmemişse adım işlem içermez ve hangi sütunun gerektiğini söyler. Konu 1'de öğrenci her sütunun
+  istatistiksel türünü de seçer; kimlik sütununun türü sabittir, sayısal rol nicel, iki kategorili rol kategorik
+  olmalıdır. Öneriler reddedilecek sütunları (tarih, gözlem numarası gibi) atlar.
+- **Kontroller:** notlar dışındaki kaynaklarda beklenen değerler uygulamanın kendi hesabıdır (`with_app_values`);
+  indirilen kod bu değerleri yeniden üretmelidir. Alternatif örneklerin değerleri testlerde motordan bağımsız
+  bir hesapla doğrulanır.
+- **Dosya okuma (`ReadFile`):** kod dosyayı okur (Python `pd.read_excel`/`pd.read_csv`, R `readxl::read_excel`/
+  `read.csv`; boş hücre ve `NA` eksik değer), seçilen sütunları ASCII adlarla yeniden adlandırır ve metin
+  hücrelerini iki dilde aynı kuralla temizler: bölünmez boşluk boşluğa çevrilir, baştaki ve sondaki boşluklar
+  silinir, boş kalan hücre ve `NA` eksik değerdir. Sütun türü dönüştürülür: kategorik metin, tam sayı kodlu
+  kategori ("1", "2"; R'de `sprintf("%.0f")`, 32 bit sınırı yok), sayı ya da metin olarak saklanmış sayı. R, CSV
+  dosyasının bütün sütunlarını metin olarak okur ve sayıları açıkça dönüştürür. Uygulama aynı kuralları
+  `core/labs/kendi_veri` ile uygular (`clean_text`, `code_text`); tanım temizlenmiş değerleri taşır. CSV'de
+  ayırıcı, ondalık işareti ve kodlama (dosyanın tamamı UTF-8 ya da Windows-1254 olarak çözülür) algılanır ve kodda
+  açıkça yazılır.
+- **Boş hücreler:** satırlar yalnız zorunlu rolün (ör. ana değişken) boş hücreleri yüzünden çıkarılır. İsteğe
+  bağlı bir rolü kullanan adım kendi tam gözlemlerini seçer (`CompleteCases`: Konu 2'de çapraz tablo ve Simpson
+  adımları) ve kaç gözlemle çalıştığını söyler; yalnız tabloda gösterilen sütunlardaki boşluklar yerinde kalır.
+  Konu 1'de kimlik, iki kategorili ve zaman sütunu seçilirse boş hücre içeremez.
+- **Reddedilen dosya ve sütunlar:** iki dilin aynı sonucu vereceği güvence altına alınamıyorsa açık bir ileti
+  verilir. Dosya düzeyinde: ilk satırı boş sayfa, aynı adı taşıyan sütunlar (adlar temizlendikten sonra), başlıkta
+  veri satırlarından az alan, hücre ortasında tırnak işareti, yalnız boşluk içeren satır, UTF-16 kodlama. Sütun
+  düzeyinde (seçeneklere alınmaz, not düşülür): adı sayı ya da tarih olan, adsız, adı "NA" olan ya da adında
+  tırnak, ters bölü veya denetim karakteri bulunan sütunlar. Seçimde: tarih, DOĞRU/YANLIŞ, sonsuz değer, metinle
+  karışık ondalık ya da çok büyük sayı, binlik ayırıcılı, ondalık işareti karışık ya da belirsiz (ayırıcıdan sonra
+  hep üç basamak) metin sayılar.
+- **Metinlere giren adlar:** öğrencinin sütun ve kategori adları Markdown işaretleri kaçırılarak (`ornek.md`)
+  yazılır ve hiçbir zaman matematik ifadesine girmez. "=" ile "≈" gösterilen değerin tam olup olmamasına göre
+  seçilir (`ornek.esit`).
+- **Kategori sırası:** alfabetik (Türkçe sıra, sayılar değerleriyle), dosyadaki ilk görülme sırası ya da
+  frekans. Sıra kodda açık bir liste olarak yazılır; dil ve yerel ayar farkı sonucu değiştirmez.
+- **Gizlilik:** yüklenen dosya ve ondan kurulan uygulama yalnız `st.session_state` içinde tutulur; ortak
+  önbelleğe yazılmaz. Dosya en çok 5 MB ve 10.000 satırdır. Veri kaynağı değişince Streamlit panelin widget
+  durumunu siler; dosya ve seçimler bu yüzden widget dışı anahtarlarda da saklanır (`_kalici_…`).
+- **Üretilen kod:** başlık kaynağı söyler; dosya adları `ikt217_konuNN_uygulama`, `_alternatif` ve
+  `_kendi_verim` biçimindedir.
 
 ### Nicel veri: sınıflar, gövde–yaprak, yüzdelik
 
@@ -217,5 +272,17 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
 - `tests/test_lab_engine.py`: tablo hesapları, ifade dili (dağılım fonksiyonları, tek terimli eksi, tablo
   kuralı), yeni işlemler (`Support`, `RowSum`, `Rectangles`, `DrawCount`, `DensityPlot`, üstel çekiliş,
   `DensityCompare`, `PmfWithDensity`, histogram eğrisi, çizgi grafiğinde bant) ve kod üreticisi yardımcıları.
+
+- `tests/test_lab_variants.py`: ek kaynağı olan her konuda alternatif örneğin adım ve bölüm uyumu, uygulama,
+  Python ve R'nin aynı sayıları vermesi; örnek dosyanın yüklenmesinin alternatif örneğin sayılarını vermesi;
+  Excel ve dört CSV biçiminde okuma ve temizlemenin (bölünmez boşluk, " NA ", başlık adları) iki dilde aynı
+  olması; boş hücrelerin yalnız ilgili adımı etkilemesi; reddedilen dosya, başlık ve sayı biçimleri; kodda
+  kullanılan adlar ve Türkçe sıralama. R'nin Excel testleri `readxl` kurulu değilse atlanır.
+- `tests/test_konu01_02_ornekler.py`: Konu 1–2 alternatif örneklerinin değerlerinin doğrudan sayımla
+  doğrulanması; kesilmiş eksen, Simpson metinleri (eşitlikler ve karışık yönler dahil), en yaygın kategoride
+  eşitlik, varsayılan olumlu kategori; Konu 1'de kimlik, zaman ve tür kuralları, türetilen ad çakışmaları;
+  metinlerde değişken sayılara ek getirilmemesi ve kullanıcı adlarının Markdown/KaTeX'i bozmaması.
+- `tests/test_app_smoke.py`: kendi verinde örnek dosyayla bütün adımlar; veri kaynağı değişince dosyanın ve
+  seçimlerin korunması, dosyanın kaldırılması ve yeni adın koda yansıması.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

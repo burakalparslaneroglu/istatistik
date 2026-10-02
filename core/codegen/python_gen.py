@@ -14,6 +14,7 @@ from core.codegen.base import (
     Generator,
     flatten,
     functions_used,
+    reference_words,
     text,
     uses_charts,
     wrapped,
@@ -60,6 +61,8 @@ from core.labs.spec import (
     Percentile,
     PieChart,
     PmfWithDensity,
+    ReadFile,
+    CompleteCases,
     Rectangles,
     RowSum,
     Scalar,
@@ -129,6 +132,21 @@ _PERCENTILE = [
 ]
 
 
+_CLEAN_TEXT = [
+    "def temiz_metin(deger):",
+    '    """Metin hücresi: bölünmez boşluk boşluğa çevrilir, baştaki ve sondaki boşluklar silinir;',
+    '    boş kalan hücre ve NA eksik değerdir (None). Sayı hücresi metne çevrilir (12 → "12")."""',
+    "    if pd.isna(deger):",
+    "        return None",
+    '    deger = str(deger).replace("\\xa0", " ").strip(" \\t\\r\\n")',
+    '    return None if deger in ("", "NA") else deger',
+]
+_CODE_TEXT = [
+    "def kod_metni(deger):",
+    '    """Tam sayı kodu kategori etiketi olur (2.0 → "2"); eksik değer eksik kalır."""',
+    "    return None if pd.isna(deger) else str(int(deger))",
+]
+
 _BOX_SUMMARY = [
     "def kutu_ozeti(degerler):",
     '    """Kutu grafiği özeti: çeyrekler ders kuralıyla (yuzdelik); bıyıklar Q1 − 1,5·IQR ile Q3 + 1,5·IQR',
@@ -178,6 +196,12 @@ def _needs_numpy(operations) -> bool:
         if isinstance(op, numpy_ops) or (isinstance(op, ClassTable) and op.lower is None):
             return True
     return bool(functions_used(operations) - _SCIPY_FUNCTIONS - _MATH_FUNCTIONS)
+
+
+def _text_columns(op: ReadFile) -> list[str]:
+    """Dosyada metin olarak saklanan (kategorik ya da metin biçiminde sayı) sütunlar: boşluklar silinir."""
+
+    return [name for name, _, kind in op.columns if kind in ("metin", "sayi_metin")]
 
 
 def _needs_percentile(operations) -> bool:
@@ -289,7 +313,11 @@ class PythonGenerator(Generator):
             lines += _PERCENTILE + ["", ""]
         if any(isinstance(op, (BoxSummary, BoxPlot)) for op in flat):
             lines += _BOX_SUMMARY + ["", ""]
-        if with_checks:
+        if any(isinstance(op, ReadFile) and _text_columns(op) for op in flat):
+            lines += _CLEAN_TEXT + ["", ""]
+        if any(isinstance(op, ReadFile) and any(kind == "kod" for _, _, kind in op.columns) for op in flat):
+            lines += _CODE_TEXT + ["", ""]
+        if with_checks and self.spec.source == "notlar":
             lines += [
                 "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
                 '    """Hesaplanan değeri ders notlarındaki basılı değerle karşılaştırır."""',
@@ -297,6 +325,17 @@ class PythonGenerator(Generator):
                 '    durum = "OK  " if abs(deger - beklenen) <= tolerans else "HATA"',
                 '    print(f"  {durum} {etiket}: {deger:.{ondalik}f}  (notlar: {beklenen:.{ondalik}f})")',
                 '    assert abs(deger - beklenen) <= tolerans, f"{etiket} notlarla uyuşmuyor."',
+                "",
+                "",
+            ]
+        elif with_checks:
+            lines += [
+                "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
+                '    """Hesaplanan değeri uygulamanın aynı veriyle verdiği değerle karşılaştırır."""',
+                "    tolerans = 0.5 * 10 ** (-ondalik) + 1e-12",
+                '    durum = "OK  " if abs(deger - beklenen) <= tolerans else "HATA"',
+                '    print(f"  {durum} {etiket}: {deger:.{ondalik}f}  (uygulama: {beklenen:.{ondalik}f})")',
+                '    assert abs(deger - beklenen) <= tolerans, f"{etiket} uygulamayla uyuşmuyor."',
                 "",
                 "",
             ]
@@ -314,6 +353,10 @@ class PythonGenerator(Generator):
             return self._inline(op)
         if isinstance(op, FromCounts):
             return self._from_counts(op)
+        if isinstance(op, ReadFile):
+            return self._read_file(op)
+        if isinstance(op, CompleteCases):
+            return self._complete_cases(op)
         if isinstance(op, Outcomes):
             return self._outcomes(op)
         if isinstance(op, Selections):
@@ -559,6 +602,71 @@ class PythonGenerator(Generator):
             f"{op.frame} = {name}.loc[satirlar, {_list(op.columns)}].reset_index(drop=True)",
             f"print(len({op.frame}))  # gözlem sayısı",
         ]
+
+    @staticmethod
+    def _read_file(op: ReadFile) -> list[str]:
+        lines = [
+            f"# {op.comment}",
+            "# Dosyayı bu betikle aynı klasöre koyun ya da yolu değiştirin.",
+            f"VERI_DOSYASI = {text(op.file_name)}",
+        ]
+        if op.file_format == "xlsx":
+            sheet = f", sheet_name={text(op.sheet)}" if op.sheet else ""
+            lines += [
+                "# Excel dosyasını okumak için openpyxl paketi gerekir (bir kez kurun: pip install openpyxl).",
+                f'ham = pd.read_excel(VERI_DOSYASI{sheet}, na_values=["", "NA"], keep_default_na=False)',
+            ]
+        else:
+            separator = '"\\t"' if op.separator == "\t" else text(op.separator)
+            lines += [
+                f"ham = pd.read_csv(VERI_DOSYASI, sep={separator}, decimal={text(op.decimal)}, "
+                f"encoding={text(op.encoding)},",
+                '                  na_values=["", "NA"], keep_default_na=False)',
+            ]
+        if op.strip_names:
+            lines += [
+                "# Sütun adlarının baştaki ve sondaki boşlukları silinir",
+                'ham.columns = [str(sutun).replace("\\xa0", " ").strip(" \\t\\r\\n") for sutun in ham.columns]',
+            ]
+        names = [name for name, _, _ in op.columns]
+        lines.append("# Kullanılan sütunlar; kodda kısa ve Türkçe karakter içermeyen adlarla")
+        lines += wrapped(f"{op.frame} = ham[[", [text(original) for _, original, _ in op.columns], "]].copy()")
+        lines += wrapped(f"{op.frame}.columns = [", [text(name) for name in names], "]")
+        texts = _text_columns(op)
+        if texts:
+            lines += [
+                "# Metin hücreleri temizlenir: baştaki ve sondaki boşluklar silinir; boş hücre ve NA eksik değerdir",
+                f"for sutun in {_list(texts)}:",
+                f"    {op.frame}[sutun] = {op.frame}[sutun].map(temiz_metin)",
+            ]
+        required = list(op.required) or names
+        dropped = f" (uygulamada {op.dropped} satır)" if op.dropped else ""
+        if set(required) == set(names):
+            lines += [
+                f"# Kullanılan sütunlardan birinde eksik değer olan satırlar çıkarılır{dropped}",
+                f"{op.frame} = {op.frame}.dropna().reset_index(drop=True)",
+            ]
+        else:
+            lines.append(f"# Temel sütunlarda eksik değer olan satırlar çıkarılır{dropped}; diğer sütunlardaki eksik "
+                         "değerler yerinde kalır")
+            lines += wrapped(f"{op.frame} = {op.frame}.dropna(subset=[", [text(name) for name in required],
+                             "]).reset_index(drop=True)")
+        for name, _, kind in op.columns:
+            if kind == "kod":
+                lines.append(f'{op.frame}["{name}"] = {op.frame}["{name}"].map(kod_metni)'
+                             '  # tam sayı kodları kategori etiketi')
+            elif kind == "sayi_metin":
+                lines.append(f'{op.frame}["{name}"] = pd.to_numeric({op.frame}["{name}"].str.replace(",", ".", '
+                             "regex=False))  # ondalık virgül")
+        lines.append(f"print(len({op.frame}))  # gözlem sayısı")
+        return lines
+
+    @staticmethod
+    def _complete_cases(op: CompleteCases) -> list[str]:
+        lines = [f"# {op.comment}"]
+        lines += wrapped(f"{op.frame} = {op.source}.dropna(subset=[", [text(column) for column in op.columns],
+                         "]).reset_index(drop=True)")
+        return lines + [f"print(len({op.frame}))  # gözlem sayısı"]
 
     def _outcomes(self, op: Outcomes) -> list[str]:
         shown = f"print({op.frame})" if self._row_count(op) <= 12 else f"print({op.frame}.head())  # ilk beş sonuç"
@@ -884,7 +992,9 @@ class PythonGenerator(Generator):
         return f"{table}.drop({', '.join(drops)})" if drops else table
 
     def _bar(self, op: BarChart) -> list[str]:
-        if op.x is None:
+        if op.x is None and op.rows:
+            lines = [f'cizim = {op.source}.loc[{_list(op.rows)}, "{op.y}"]  # yalnız karşılaştırılan kategoriler']
+        elif op.x is None:
             lines = [f'cizim = {self._chart_table(op.source)}["{op.y}"]']
             if op.source in self.numeric_tables:
                 lines.append("cizim.index = cizim.index.astype(str)  # sayısal değerler kategori etiketi olarak")
@@ -1194,7 +1304,7 @@ class PythonGenerator(Generator):
         raise TypeError(f"Tanınmayan hedef: {type(target).__name__}")
 
     def check_lines(self, checks: tuple[Check, ...]) -> list[str]:
-        lines = ['print("Notlarla karşılaştırma:")']
+        lines = [f'print("{reference_words(self.spec)[0]}")']
         for check in checks:
             expected = f"{check.expected:.{check.decimals}f}"
             lines.append(
@@ -1203,4 +1313,4 @@ class PythonGenerator(Generator):
         return lines
 
     def closing(self) -> list[str]:
-        return ['print("\\nBütün değerler ders notlarıyla uyuşuyor.")']
+        return [f'print("\\n{reference_words(self.spec)[2]}")']

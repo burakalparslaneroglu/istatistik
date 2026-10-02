@@ -29,6 +29,8 @@ from core.labs.spec import (
     NewSample,
     Operation,
     Outcomes,
+    ReadFile,
+    CompleteCases,
     Rectangles,
     RowSum,
     Scalar,
@@ -118,10 +120,14 @@ def numeric_columns(spec: LabSpec) -> set[tuple[str, str]]:
                 for position, column in enumerate(op.columns):
                     if _numbers(row[position] for row in op.rows):
                         found.add((op.frame, column))
+            elif isinstance(op, ReadFile):
+                found |= {(op.frame, name) for name, _, kind in op.columns if kind in ("sayi", "sayi_metin")}
             elif isinstance(op, Outcomes):
                 found |= {(op.frame, column) for column, values in op.stages if _numbers(values)}
             elif isinstance(op, (Derive, Event, Draw, DrawDiscrete, DrawCount, MapCodes, Support, Rectangles, RowSum)):
                 found.add((op.frame, op.name))
+            elif isinstance(op, CompleteCases):
+                found |= {(op.frame, column) for frame, column in list(found) if frame == op.source}
     return found
 
 
@@ -141,10 +147,11 @@ def signed_columns(spec: LabSpec) -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for step in spec.steps:
         for op in flatten(step.operations):
-            if isinstance(op, InlineData):
-                for position, column in enumerate(op.columns):
+            if isinstance(op, (InlineData, ReadFile)):
+                names = [column[0] if isinstance(op, ReadFile) else column for column in op.columns]
+                for position, column in enumerate(names):
                     values = [row[position] for row in op.rows]
-                    if _numbers(values) and min(values) < 0:
+                    if values and _numbers(values) and min(values) < 0:
                         found.add((op.frame, column))
     return found
 
@@ -260,6 +267,28 @@ class Generator:
                 f"{c} sayıların aynısını verir, R aynı dağılımdan farklı çekiliş yapar.",
                 "",
             ]
+        if self.spec.source == "alternatif":
+            return [
+                f"{c} {COURSE}",
+                f"{c} Konu {topic} uygulaması, alternatif örnek: {self.spec.title}",
+                f"{c} Ders notlarındaki adımlar, kurgusal bir veri setiyle (§{self.spec.note_section}).",
+                f"{c}",
+                f"{c} Veri: kurgusal alternatif örnek; bu betiğin içinde yazılıdır.",
+                f"{c} Betik sonunda sonuçlar uygulamadaki değerlerle karşılaştırılır.",
+                "",
+            ]
+        if self.spec.source == "kendi":
+            files = [op.file_name for step in self.spec.steps for op in step.operations if isinstance(op, ReadFile)]
+            return [
+                f"{c} {COURSE}",
+                f"{c} Konu {topic} uygulaması, kendi verin: {self.spec.title}",
+                f"{c} Ders notlarındaki adımlar, yüklediğiniz veri dosyasıyla (§{self.spec.note_section}).",
+                f"{c}",
+                f"{c} Veri: {files[0] if files else 'yüklenen dosya'}. Dosyayı bu betikle aynı klasöre koyun",
+                f"{c} ya da betikteki dosya yolunu değiştirin.",
+                f"{c} Betik sonunda sonuçlar uygulamadaki değerlerle karşılaştırılır.",
+                "",
+            ]
         return [
             f"{c} {COURSE}",
             f"{c} Konu {topic} uygulaması: {self.spec.title}",
@@ -301,7 +330,7 @@ class Generator:
     def depends_on_earlier(self, step: LabStep) -> bool:
         """Adım kendi verisini kurmuyorsa önceki adımların çıktısına dayanır."""
 
-        sources = (InlineData, FromCounts, NewSample, Outcomes, Selections, Support, Rectangles)
+        sources = (InlineData, FromCounts, ReadFile, NewSample, Outcomes, Selections, Support, Rectangles)
         created = {op.frame for op in step.operations if isinstance(op, sources)}
         used: set[str] = set()
         for op in flatten(step.operations):
@@ -356,5 +385,16 @@ def render_step(spec: LabSpec, number: int, language: str) -> str:
     return generator(spec, language).step_snippet(number)
 
 
+_FILE_SUFFIX = {"notlar": "uygulama", "alternatif": "alternatif", "kendi": "kendi_verim"}
+
+
 def script_filename(spec: LabSpec, language: str) -> str:
-    return f"ikt217_{spec.topic_key}_uygulama.{LANGUAGE_INFO[language].extension}"
+    return f"ikt217_{spec.topic_key}_{_FILE_SUFFIX[spec.source]}.{LANGUAGE_INFO[language].extension}"
+
+
+def reference_words(spec: LabSpec) -> tuple[str, str, str]:
+    """Kontrol satırlarının karşılaştırdığı kaynak: (başlık, kısa ad, uyuşma cümlesi)."""
+
+    if spec.source == "notlar":
+        return "Notlarla karşılaştırma:", "notlar", "Bütün değerler ders notlarıyla uyuşuyor."
+    return "Uygulamayla karşılaştırma:", "uygulama", "Bütün değerler uygulamadaki sonuçlarla uyuşuyor."

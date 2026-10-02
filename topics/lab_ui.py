@@ -1,8 +1,9 @@
 """Ders notu uygulamalarının ortak "Uygulama" sekmesi.
 
 Her uygulama ``core.labs`` altındaki tek bir tanımdan beslenir: adım metni, uygulamanın hesabı,
-Python ve R kodu ve notlarla karşılaştırma aynı kaynaktan gelir. Veriler notlardaki küçük veri
-setleridir ve tanımın içinde yazılıdır; indirme veya yükleme gerekmez.
+Python ve R kodu ve notlarla karşılaştırma aynı kaynaktan gelir. Varsayılan veri notlardaki küçük veri
+setleridir. Ek kaynakları olan konularda (``core.labs.ornekler``) sekmenin üstünde veri kaynağı seçilir:
+notlardaki örnek, kurgusal alternatif örnek ya da öğrencinin kendi dosyası (``topics.kendi_veri_ui``).
 """
 
 from __future__ import annotations
@@ -15,13 +16,17 @@ import streamlit as st
 
 from core.charts import CHART_TYPES, figure_for, show_figure, tr_number
 from core.codegen.base import LANGUAGE_INFO, LANGUAGES, render_script, render_step, script_filename
+from core.labs.ornek import SOURCE_LABELS, md
+from core.labs.ornekler import get_variants
 from core.labs.registry import get_lab
 from core.labs.runner import LabRun, LabState, run_lab, run_operations
 from core.labs.spec import (
     REPRO_DESCRIPTIONS,
+    SOURCES,
     TOTAL,
     BoxSummary,
     ClassTable,
+    CompleteCases,
     Count,
     CrossTab,
     FrequencyTable,
@@ -36,6 +41,7 @@ from core.labs.spec import (
     PairStatistic,
     Percentile,
     PieChart,
+    ReadFile,
     Scalar,
     ScalarTable,
     Selections,
@@ -45,6 +51,7 @@ from core.labs.spec import (
     StemLeaf,
     VariableTypes,
 )
+from topics.kendi_veri_ui import render_custom
 
 CODE_LANGUAGE_KEY = "code_language"
 _COLUMN_LABELS = {
@@ -104,15 +111,19 @@ def _index_text(item) -> str:
 
 
 def _formatted(table: pd.DataFrame, formats: dict[str, Callable[[float], str]], index_label: str,
-               label: Callable[[str], str]) -> pd.DataFrame:
-    """Sayıları Türkçe biçimde metne çevirir; satır adları ilk sütun olur."""
+               label: Callable[[str], str], rename: bool = True) -> pd.DataFrame:
+    """Sayıları Türkçe biçimde metne çevirir; satır adları ilk sütun olur. ``rename=False``: sütunlar kategori
+    adlarıdır (çapraz tablo) ve olduğu gibi yazılır."""
 
     shown = pd.DataFrame(index=table.index)
     for column in table.columns:
         formatter = formats.get(str(column))
         values = table[column]
         shown[column] = [formatter(value) for value in values] if formatter else values
-    shown = shown.rename(columns=lambda name: _COLUMN_LABELS.get(str(name), label(str(name))))
+    if rename:
+        shown = shown.rename(columns=lambda name: _COLUMN_LABELS.get(str(name), label(str(name))))
+    else:
+        shown.columns = [str(name) for name in shown.columns]
     shown.index = [_index_text(item) for item in shown.index]
     return shown.rename_axis(index_label).reset_index()
 
@@ -133,7 +144,7 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
             def formatter(value: float) -> str:
                 return tr_number(value, op.decimals, True)
         formats = {str(column): formatter for column in table.columns}
-        return _formatted(table, formats, f"{label(op.row)} \\ {label(op.column)}", label)
+        return _formatted(table, formats, f"{label(op.row)} \\ {label(op.column)}", label, rename=False)
     if isinstance(op, PieChart):
         formats = {op.column: lambda v: tr_number(v, 3), "aci": lambda v: tr_number(v, 1)}
         return _formatted(table, formats, "Kategori", label)
@@ -170,12 +181,18 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
     raise TypeError(f"Tablo türü tanınmıyor: {type(op).__name__}")
 
 
-def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: name) -> str:
-    """Çapraz tablonun ne gösterdiği: sayılar mı, hangi paydayla yüzdeler mi, hangi alt grupta mı."""
+def _plain(text: str) -> str:
+    return text
+
+
+def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: name,
+                     escape: Callable[[str], str] = _plain) -> str:
+    """Çapraz tablonun ne gösterdiği: sayılar mı, hangi paydayla yüzdeler mi, hangi alt grupta mı. ``escape``:
+    kullanıcının adlarını Markdown'a güvenli yazan fonksiyon (kendi verin)."""
 
     if op.weights is not None:
-        kind = (f"**Çapraz tablo — toplanan sütun: {label(op.weights)}** (her hücre, o hücreye düşen satırlardaki "
-                "değerlerin toplamıdır)")
+        kind = (f"**Çapraz tablo — toplanan sütun: {escape(label(op.weights))}** (her hücre, o hücreye düşen "
+                "satırlardaki değerlerin toplamıdır)")
     else:
         kind = {
             None: "**Çapraz tablo: sayılar**",
@@ -184,7 +201,7 @@ def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: na
         }[op.percent]
     if op.where is not None:
         column, value = op.where
-        kind += f" · yalnız {label(column).lower()}: {value}"
+        kind += f" · yalnız {escape(label(column))}: {escape(str(value))}"
     return kind
 
 
@@ -206,6 +223,25 @@ def _decimals(values: pd.Series) -> int:
     return 4
 
 
+def _with_blanks(values: pd.Series) -> pd.Series:
+    """Boş hücresi olan sütunun ekran biçimi: değerler metin, boş hücre boş metin; sayılar Türkçe yazımla."""
+
+    present = values.dropna()
+    if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
+        numbers = present.astype(float)
+        decimals = 0 if np.allclose(numbers, np.round(numbers), rtol=0, atol=1e-9) else _decimals(numbers)
+        return values.map(lambda value: "" if pd.isna(value) else tr_number(value, decimals))
+    return values.map(lambda value: "" if pd.isna(value) else value)
+
+
+def _frame_label(name: str, label: Callable[[str], str]) -> str:
+    """Veri çerçevesi sütununun başlığı: tanımdaki etiket önce (öğrencinin "Yüzde" adlı sütunu "Yüzde frekans"
+    olmaz), yoksa sonuç tablolarının ortak başlıkları."""
+
+    own = label(name)
+    return own if own != name else _COLUMN_LABELS.get(name, name)
+
+
 def _frame(frame: pd.DataFrame, label: Callable[[str], str]):
     """Veri çerçevesinin ekran biçimi: tam sayı değerli sütunlar tam sayı, kesirli sütunlar ondalık virgülle.
 
@@ -215,6 +251,9 @@ def _frame(frame: pd.DataFrame, label: Callable[[str], str]):
     shown = frame.copy()
     formats: dict[str, Callable[[float], str]] = {}
     for column in shown.columns:
+        if shown[column].isna().any():  # kendi verindeki boş hücreler boş görünür ("None" ya da "nan" değil)
+            shown[column] = _with_blanks(shown[column])
+            continue
         if shown[column].dtype.kind != "f":
             continue
         if np.allclose(shown[column], np.round(shown[column]), rtol=0, atol=1e-9):
@@ -223,7 +262,7 @@ def _frame(frame: pd.DataFrame, label: Callable[[str], str]):
                 formats[column] = lambda value: tr_number(value, 0)
         else:
             formats[column] = lambda value, decimals=_decimals(shown[column]): tr_number(value, decimals)
-    rename = {column: _COLUMN_LABELS.get(str(column), label(str(column))) for column in shown.columns}
+    rename = {column: _frame_label(str(column), label) for column in shown.columns}
     shown = shown.rename(columns=rename)
     if not formats:
         return shown
@@ -300,13 +339,15 @@ def _input_only(operations, index: int, state: LabState) -> bool:
                for later in operations[index + 1:])
 
 
-def render_operations(operations, state: LabState, label: Callable[[str], str], key_prefix: str) -> None:
-    """İşlemlerin sonuçlarını sırayla gösterir; art arda gelen tek sayılar tek satırda toplanır."""
+def render_operations(operations, state: LabState, label: Callable[[str], str], key_prefix: str,
+                      escape: Callable[[str], str] = _plain) -> None:
+    """İşlemlerin sonuçlarını sırayla gösterir; art arda gelen tek sayılar tek satırda toplanır. ``escape``: başlık ve
+    etiketlerdeki kullanıcı adlarını Markdown'a güvenli yazar (kendi verin; notlardaki metinler olduğu gibi)."""
 
     pending: list[tuple[str, str]] = []
     for index, op in enumerate(operations):
         if isinstance(op, _METRICS):
-            pending.extend(_metrics(op, state))
+            pending.extend((escape(title), value) for title, value in _metrics(op, state))
             continue
         if pending:
             _show_metrics(pending)
@@ -315,7 +356,7 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             frame = state.frames[op.frame]
             if _input_only(operations, index, state):
                 frame = frame[list(op.columns)]
-            st.markdown(f"**{op.comment}**")
+            st.markdown(f"**{escape(op.comment)}**")
             if op.layout and len(op.columns) == 1 and len(frame) % op.layout == 0:
                 # Notlardaki gibi satır başına ``layout`` değer; sütun başlıkları satır içindeki sıradır.
                 values = frame[op.columns[0]].to_numpy()
@@ -325,24 +366,32 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
                 show_table(_frame(frame, label))
         elif isinstance(op, FromCounts):
             counts = pd.DataFrame([tuple(row) for row in op.rows], columns=[*op.columns, "sayi"])
-            st.markdown(f"**{op.comment}**")
+            st.markdown(f"**{escape(op.comment)}**")
             show_table(_frame(counts, label))
             st.caption(f"Her satır sayısı kadar tekrarlanır: toplam {_count(len(state.frames[op.frame]))} gözlem.")
+        elif isinstance(op, ReadFile):
+            frame = state.frames[op.frame]
+            st.markdown(f"**{escape(op.comment)}**")
+            show_table(_frame(frame, label))
+            dropped = f" Temel sütunlarda boş hücre bulunan {_count(op.dropped)} satır çıkarıldı." if op.dropped else ""
+            st.caption(f"Analizde {_count(len(frame))} gözlem var.{dropped}")
+        elif isinstance(op, CompleteCases):
+            st.caption(f"{op.comment}: {_count(len(state.frames[op.frame]))} gözlem.")
         elif isinstance(op, (Outcomes, Selections)):
             frame = state.frames[op.frame]
-            st.markdown(f"**{op.comment}**")
+            st.markdown(f"**{escape(op.comment)}**")
             show_table(_frame(frame, label))
             noun = "Sonuç" if isinstance(op, Outcomes) else "Seçim"
             st.caption(f"{noun} sayısı: {_count(len(frame))}.")
         elif isinstance(op, ShowFrame):
-            st.markdown(f"**{op.comment}**")
+            st.markdown(f"**{escape(op.comment)}**")
             show_table(_frame(state.frames[op.frame][list(op.columns)], label))
         elif isinstance(op, MapCodes):
             frame = state.frames[op.frame][[op.source, op.name]].head(8)
-            st.markdown(f"**{op.comment}**")
+            st.markdown(f"**{escape(op.comment)}**")
             show_table(_frame(frame, label))
         elif isinstance(op, CrossTab):
-            st.markdown(crosstab_caption(op, label))
+            st.markdown(crosstab_caption(op, label, escape))
             show_table(display_table(op, state.tables[op.result], label))
         elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf,
                              JoinColumns, BoxSummary)):
@@ -390,10 +439,17 @@ def _render_code(spec: LabSpec, step: LabStep) -> None:
 
 def _render_downloads(spec: LabSpec) -> None:
     st.markdown("**Bütün uygulamayı indirin**")
-    st.caption(
-        "Her dosya bütün adımları çalıştırır ve sonunda sonuçları ders notlarındaki sayılarla karşılaştırır. "
-        "Bir sayı tutmazsa hangisinin tutmadığını söyleyerek durur."
-    )
+    if spec.source == "notlar":
+        st.caption(
+            "Her dosya bütün adımları çalıştırır ve sonunda sonuçları ders notlarındaki sayılarla karşılaştırır. "
+            "Bir sayı tutmazsa hangisinin tutmadığını söyleyerek durur."
+        )
+    else:
+        files = "" if spec.source == "alternatif" else " Veri dosyanızı betikle aynı klasöre koyun."
+        st.caption(
+            "Her dosya bütün adımları çalıştırır ve sonunda sonuçları uygulamanın bu sayfada gösterdiği sayılarla "
+            f"karşılaştırır. Bir sayı tutmazsa hangisinin tutmadığını söyleyerek durur.{files}"
+        )
     for column, language in zip(st.columns(len(LANGUAGES)), LANGUAGES):
         info = LANGUAGE_INFO[language]
         column.download_button(
@@ -407,34 +463,82 @@ def _render_downloads(spec: LabSpec) -> None:
         )
 
 
-@st.cache_resource(show_spinner=False)
-def _run(topic_key: str) -> LabRun:
-    return run_lab(get_lab(topic_key))
+def _spec(topic_key: str, source: str) -> LabSpec:
+    """Notlardaki ya da alternatif örneğin tanımı (öğrenci verisi içermez)."""
+
+    return get_lab(topic_key) if source == "notlar" else get_variants(topic_key).alternative()
 
 
 @st.cache_resource(show_spinner=False)
-def _state_through(topic_key: str, number: int) -> LabState:
+def _run(topic_key: str, source: str = "notlar") -> LabRun:
+    return run_lab(_spec(topic_key, source))
+
+
+@st.cache_resource(show_spinner=False)
+def _state_through(topic_key: str, number: int, source: str = "notlar") -> LabState:
     """Adımın sonundaki durum: sonraki adımların eklediği sütunlar bu adımda görünmez."""
 
-    return run_operations(get_lab(topic_key).operations_through(number))
+    return run_operations(_spec(topic_key, source).operations_through(number))
+
+
+def _source_key(topic_key: str) -> str:
+    return f"{topic_key}_lab_kaynak"
+
+
+_SOURCE_ICONS = {
+    "notlar": ":material/menu_book:",
+    "alternatif": ":material/shuffle:",
+    "kendi": ":material/upload_file:",
+}
+
+
+def _render_source(topic_key: str) -> str:
+    """Sekmenin en üstünde veri kaynağı seçimi; varsayılan notlardaki örnektir."""
+
+    key = _source_key(topic_key)
+    if st.session_state.get(key) not in SOURCES:
+        st.session_state[key] = SOURCES[0]
+    st.segmented_control(
+        "Veri kaynağı", options=list(SOURCES), key=key, required=True, width="stretch",
+        format_func=lambda source: f"{_SOURCE_ICONS[source]} {SOURCE_LABELS[source]}",
+    )
+    return st.session_state[key]
 
 
 def render_lab(spec: LabSpec) -> None:
-    st.markdown(
-        f"Bu sekme ders notlarındaki çözümlü örnekleri (**{spec.title}**) adım adım yeniden üretir. "
-        "Tablolar notlardaki sayıların aynısını verir; kod dilini kenar çubuğundan seçin."
-    )
-    run = _run(spec.topic_key)
-    step = _render_navigation(spec)
+    variants = get_variants(spec.topic_key)
+    source = _render_source(spec.topic_key) if variants else "notlar"
+    if source == "notlar":
+        st.markdown(
+            f"Bu sekme ders notlarındaki çözümlü örnekleri (**{spec.title}**) adım adım yeniden üretir. "
+            "Tablolar notlardaki sayıların aynısını verir; kod dilini kenar çubuğundan seçin."
+        )
+        active = spec
+    elif source == "alternatif":
+        active = variants.alternative()
+        st.markdown(
+            f"Bu sekme notlardaki adımları (**{spec.title}**) başka bir veriyle yeniden yapar. {variants.story} "
+            "Sayılar notlardakinden farklıdır; yöntem ve kod aynıdır."
+        )
+    else:
+        active = render_custom(spec.topic_key, variants.custom)
+        if active is None:
+            return
+    step = _render_navigation(active)
     st.subheader(f"Adım {step.number}: {step.title}")
     st.caption(step.note.label())
     st.markdown(step.explanation)
     if step.operations:
-        state = _state_through(spec.topic_key, step.number)
-        render_operations(step.operations, state, spec.label, f"{spec.topic_key}_adim{step.number}")
-        _render_checks(step, run)
+        if source == "kendi":
+            state = run_operations(active.operations_through(step.number))
+        else:
+            state = _state_through(spec.topic_key, step.number, source)
+        render_operations(step.operations, state, active.label, f"{spec.topic_key}_{source}_adim{step.number}",
+                          md if source == "kendi" else _plain)
+        if source == "notlar":
+            _render_checks(step, _run(spec.topic_key))
     if step.takeaway:
         st.info(step.takeaway, icon=":material/lightbulb:")
-    _render_code(spec, step)
-    if step.number == spec.steps[-1].number:
-        _render_downloads(spec)
+    _render_code(active, step)
+    if step.number == active.steps[-1].number:
+        _render_downloads(active)

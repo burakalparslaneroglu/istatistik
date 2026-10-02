@@ -10,14 +10,17 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 
 - **Uygulama:** ders notlarındaki çözümlü örnekler, bölüm sırasıyla. Tablolar notlardaki sayıların
   aynısını verir; her adımın Python ve R kodu gösterilir, bütün uygulama tek dosya olarak indirilir.
+  Ek veri kaynağı olan konularda sekmenin üstünde veri seçilir: **Notlardaki örnek** (varsayılan),
+  **Alternatif örnek** (aynı adımlar, kurgusal veri) ve **Kendi verin** (Excel ya da CSV dosyası yükleme ve
+  sütun seçimi).
 - **Sezgi:** veri üretim süreci (DGP) bilinen kontrollü simülasyonlar. Kaydırıcılarla parametre
   değiştirilir; kod şu anki kaydırıcı değerleriyle üretilir.
 - **Kendini sına:** dört soru türünden 24 soru (çoktan seçmeli, doğru–yanlış, boşluk doldurma, denklem).
 
 | Konu | Başlık | Durum | Uygulama adımı | Notlarla karşılaştırılan sayı | Sezgi deneyi | Soru |
 |---|---|---|---:|---:|---:|---:|
-| 01 | Veri ve İstatistiğe Giriş | Yeni yapı | 5 | 14 | 3 | 24 |
-| 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 12 | 56 | 3 | 24 |
+| 01 | Veri ve İstatistiğe Giriş | Yeni yapı + ek veri kaynakları | 5 | 14 | 3 | 24 |
+| 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı + ek veri kaynakları | 12 | 56 | 3 | 24 |
 | 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 11 | 85 | 3 | 24 |
 | 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı | 10 | 32 | 3 | 24 |
 | 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı | 12 | 40 | 3 | 24 |
@@ -32,6 +35,8 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
 yolun aynısını verir.
 
+Ek veri kaynakları (alternatif örnek ve kendi verin) şu an Konu 1–2'de vardır.
+
 ## İki dilde kod
 
 Python ve R kodu uygulamanın hesabıyla aynı tanımdan üretilir (`core/codegen/`). Her adımda iki dilde
@@ -41,12 +46,16 @@ sonucun hangi anlamda aynı olduğu yazılır:
 - **Yalnız dağılımda aynı:** rastgele çekiliş içerir. Python sürümü uygulamadaki sayıların aynısını verir;
   R'nin rastgele sayı üreteci farklı olduğu için aynı tohum aynı çekilişi vermez (Sezgi sekmesi).
 
-İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları ders notlarındaki basılı
-sayılarla karşılaştırır (`OK` / `HATA`). Gerekli paketler:
+İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları karşılaştırır (`OK` / `HATA`):
+notlardaki örnekte ders notlarındaki basılı sayılarla, alternatif örnekte ve kendi verinde uygulamanın aynı
+veriyle gösterdiği sayılarla. Kendi verin dosyası, yüklenen dosyayı okur; dosya betikle aynı klasörde olmalıdır.
+Gerekli paketler:
 
 - Python 3.12: `pandas`, `numpy`, `matplotlib`. Olasılık dağılımı fonksiyonu (binom, Poisson, hipergeometrik,
   normal, tek-düze, üstel, gamma) kullanan kod ayrıca `scipy` ister (Konu 3 Deney 3, Konu 4 Deney 2 ve Konu 9–12).
-- R 4.2 veya üstü: yalnız temel R; ek paket gerekmez. Betik Rscript ile çalıştırılırsa grafikler
+  Yüklenen Excel dosyasını okuyan kod `openpyxl` ister.
+- R 4.2 veya üstü: temel R. Yalnız yüklenen Excel dosyasını okuyan kod `readxl` paketini ister
+  (`install.packages("readxl")`); CSV dosyası temel R ile okunur. Betik Rscript ile çalıştırılırsa grafikler
   çalışma klasörüne değil R'nin geçici klasörüne yazılır; RStudio'da Plots panelinde görünür.
 
 ## Tasarım ilkeleri
@@ -81,14 +90,19 @@ git diff --check
 ```
 
 Testler üretilen Python kodunu çalıştırır ve notlardaki sayıları üretip üretmediğini denetler. `Rscript`
-kuruluysa R kodu da aynı biçimde denetlenir; kurulu değilse R testleri atlanır.
+kuruluysa R kodu da aynı biçimde denetlenir; kurulu değilse R testleri atlanır. Yüklenen Excel dosyasını R'de
+okuyan iki test yalnız `readxl` kuruluysa çalışır.
 
 ## Veri ve hesaplama kaynakları
 
-Uygulamadaki veri setleri ders notlarındaki örneklerden (tabloların içinde yazılı küçük veri setleri) veya
-öğretim amacıyla açıkça tanımlanmış simülasyonlardan oluşur. Çalışma zamanında dış veri kaynağı, LLM veya
-dış API çağrısı yapılmaz. Simülasyonlarda yeniden üretilebilirlik için sabit tohumlu
-`np.random.default_rng(seed)` kullanılır.
+Uygulamadaki veri setleri ders notlarındaki örneklerden (tabloların içinde yazılı küçük veri setleri),
+alternatif örneklerin kurgusal verilerinden (arayüzde "Kurgusal veri" diye belirtilir) veya öğretim amacıyla
+açıkça tanımlanmış simülasyonlardan oluşur. Çalışma zamanında dış veri kaynağı, LLM veya dış API çağrısı
+yapılmaz. Simülasyonlarda yeniden üretilebilirlik için sabit tohumlu `np.random.default_rng(seed)` kullanılır.
+
+Öğrencinin yüklediği dosya yalnız o oturumda, sunucunun belleğinde işlenir; kaydedilmez, ortak önbelleğe
+yazılmaz ve başkalarıyla paylaşılmaz. En çok 5 MB ve 10.000 satır okunur. Arayüz kişisel veri içeren dosya
+yüklenmemesini ister.
 
 ## İstatistiksel yorumlama ilkeleri
 

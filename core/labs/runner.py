@@ -1,6 +1,7 @@
 """Uygulama tanımını çalıştırır ve notlardaki sayılarla karşılaştırır.
 
-Veriler ders notlarındaki küçük veri setleridir ve tanımın içinde yazılıdır; dış kaynak yoktur.
+Veriler tanımın içinde yazılıdır: ders notlarındaki ya da kurgusal alternatif örneğin küçük veri setleri veya
+öğrencinin yüklediği dosyanın temizlenmiş değerleri (``ReadFile``); dış kaynak yoktur.
 Simülasyonlarda tek bir ``np.random.default_rng(seed)`` üreteci vardır ve bütün çekilişler işlem
 sırasıyla ondan yapılır. Üretilen Python kodu aynı sırayla çektiği için aynı sayıları verir.
 """
@@ -56,6 +57,8 @@ from core.labs.spec import (
     Percentile,
     PieChart,
     PmfWithDensity,
+    ReadFile,
+    CompleteCases,
     Rectangles,
     RowSum,
     Scalar,
@@ -184,6 +187,8 @@ def without_total(table: pd.DataFrame) -> pd.DataFrame:
 def _bar_data(op: BarChart, state: LabState) -> pd.DataFrame:
     if op.x is None:
         table = without_total(state.tables[op.source])
+        if op.rows:
+            table = table.loc[list(op.rows)]
         data = pd.DataFrame({"kategori": table.index.astype(str), "deger": table[op.y].to_numpy(dtype=float)})
     else:
         frame = state.frames[op.source]
@@ -206,6 +211,12 @@ def execute(op: Operation, state: LabState) -> None:
         state.frames[op.frame] = T.inline_frame(op.columns, op.rows)
     elif isinstance(op, FromCounts):
         state.frames[op.frame] = T.from_counts(op.columns, op.rows)
+    elif isinstance(op, ReadFile):
+        # Dosya uygulamada yüklenirken okunup temizlendi; tanım temizlenmiş değerleri taşır.
+        state.frames[op.frame] = T.inline_frame([name for name, _, _ in op.columns], op.rows)
+    elif isinstance(op, CompleteCases):
+        source = state.frames[op.source]
+        state.frames[op.frame] = source.dropna(subset=list(op.columns)).reset_index(drop=True)
     elif isinstance(op, Outcomes):
         state.frames[op.frame] = T.outcomes(op.stages)
     elif isinstance(op, Selections):
