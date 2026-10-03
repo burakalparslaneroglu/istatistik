@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from core.charts import CHART_TYPES, figure_for, show_figure, tr_number
-from core.codegen.base import LANGUAGE_INFO, LANGUAGES, render_script, render_step, script_filename
+from core.codegen.base import LANGUAGE_INFO, LANGUAGES, render_script, render_step, script_filename, uses_file
 from core.labs.ornek import SOURCE_LABELS, kesin, md, ondalik
 from core.labs.ornekler import get_variants
 from core.labs.registry import get_lab
@@ -54,7 +54,8 @@ from core.labs.spec import (
     Subset,
     VariableTypes,
 )
-from topics.kendi_veri_ui import render_custom
+from core.labs.tables import frame_decimals
+from topics.kendi_veri_ui import render_custom, render_params
 
 CODE_LANGUAGE_KEY = "code_language"
 _COLUMN_LABELS = {
@@ -262,17 +263,12 @@ def _decimals(values: pd.Series, small: bool = False) -> int:
     """Kesirli bir sütunun gösterim basamağı: en az 2 (notlardaki 0,25 ve 17,50 gibi), en çok 4.
 
     ``small`` (notlar dışındaki kaynaklar; notların ekranı değişmez): veri gibi kısa değerler (15'ten az anlamlı
-    basamak, ör. 0,345678 ya da 0,000056) tam yazılır; bölmeyle bulunan uzun değerler (25,3333…) en az 4 basamak ve en
-    küçük değerin 3 anlamlı basamağıyla (en çok 15)."""
+    basamak, ör. 0,345678 ya da 0,000056; son basamaklarındaki kayan nokta gürültüsü atılır) tam yazılır; bölmeyle
+    bulunan uzun değerler (25,3333…) en az 4 basamak ve en küçük değerin 3 anlamlı basamağıyla (en çok 15). Kural
+    ``core.labs.tables.frame_decimals``'tadır."""
 
     if small:
-        nonzero = [_short(value) for value in values if value != 0 and np.isfinite(value)]
-        if not nonzero:
-            return 2
-        if max(len(item.as_tuple().digits) for item in nonzero) < 15:
-            return min(15, max(2, max(-item.as_tuple().exponent for item in nonzero)))
-        smallest = min(abs(float(item)) for item in nonzero)
-        return min(15, max(4, 2 - int(np.floor(np.log10(smallest)))))
+        return frame_decimals(values)
     for decimals in (2, 3):
         if np.allclose(values, np.round(values, decimals), rtol=0, atol=1e-9):
             return decimals
@@ -307,11 +303,13 @@ def _frame_label(name: str, label: Callable[[str], str]) -> str:
     return own if own != name else _COLUMN_LABELS.get(name, name)
 
 
-def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False):
+def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False,
+           hints: dict[str, int] | None = None):
     """Veri çerçevesinin ekran biçimi: tam sayı değerli sütunlar tam sayı, kesirli sütunlar ondalık virgülle.
 
     Kesirli sütunlar Styler ile biçimlenir; sütun sayısal kaldığı için sağa hizalı görünür. ``small``: bkz.
-    ``_decimals``.
+    ``_decimals``. ``hints``: genel uygulamanın kesin değerlerden kurduğu sütun basamakları (``ShowFrame.decimals``;
+    yalnız notlar dışında).
     """
 
     shown = frame.copy()
@@ -320,6 +318,9 @@ def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False
         if shown[column].isna().any():  # kendi verindeki boş hücreler boş görünür ("None" ya da "nan" değil)
             shown[column] = _with_blanks(shown[column], small)
             continue
+        if small and shown[column].dtype.kind in "iu" and (shown[column] < 0).any():
+            formats[column] = lambda value: tr_number(value, 0)  # tipografik eksi: −15
+            continue
         if shown[column].dtype.kind != "f":
             continue
         if _whole(shown[column], small):
@@ -327,8 +328,8 @@ def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False
             if (shown[column] < 0).any():  # tipografik eksi: −10
                 formats[column] = lambda value: tr_number(value, 0)
         elif small:
-            formats[column] = lambda value, decimals=_decimals(shown[column], small): _signless_zero(
-                tr_number(value, decimals))
+            digits = (hints or {}).get(column, _decimals(shown[column], small))
+            formats[column] = lambda value, decimals=digits: _signless_zero(tr_number(value, decimals))
         else:
             formats[column] = lambda value, decimals=_decimals(shown[column], small): tr_number(value, decimals)
     rename = {column: _frame_label(str(column), label) for column in shown.columns}
@@ -460,7 +461,7 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             st.caption(f"{noun} sayısı: {_count(len(frame))}.")
         elif isinstance(op, ShowFrame):
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(state.frames[op.frame][list(op.columns)], label, small))
+            show_table(_frame(state.frames[op.frame][list(op.columns)], label, small, dict(op.decimals)))
         elif isinstance(op, MapCodes):
             frame = state.frames[op.frame][[op.source, op.name]].head(8)
             st.markdown(f"**{escape(op.comment)}**")
@@ -523,7 +524,7 @@ def _render_downloads(spec: LabSpec) -> None:
             "Bir sayı tutmazsa hangisinin tutmadığını söyleyerek durur."
         )
     else:
-        files = "" if spec.source == "alternatif" else " Veri dosyanızı betikle aynı klasöre koyun."
+        files = " Veri dosyanızı betikle aynı klasöre koyun." if uses_file(spec) else ""
         st.caption(
             "Her dosya bütün adımları çalıştırır ve sonunda sonuçları uygulamanın bu sayfada gösterdiği sayılarla "
             f"karşılaştırır. Bir sayı tutmazsa hangisinin tutmadığını söyleyerek durur.{files}"
@@ -568,6 +569,16 @@ _SOURCE_ICONS = {
     "alternatif": ":material/shuffle:",
     "kendi": ":material/upload_file:",
 }
+PARAMS_ICON, PARAMS_LABEL = ":material/tune:", "Kendi değerlerini gir"
+
+
+def _source_label(topic_key: str, source: str) -> str:
+    """Kaynak düğmesinin yazısı; dosyasız konularda (Konu 9–12) üçüncü seçenek "Kendi değerlerini gir"dir."""
+
+    variants = get_variants(topic_key)
+    if source == "kendi" and variants is not None and variants.custom is None and variants.params is not None:
+        return f"{PARAMS_ICON} {PARAMS_LABEL}"
+    return f"{_SOURCE_ICONS[source]} {SOURCE_LABELS[source]}"
 
 
 def _render_source(topic_key: str) -> str:
@@ -578,7 +589,7 @@ def _render_source(topic_key: str) -> str:
         st.session_state[key] = SOURCES[0]
     st.segmented_control(
         "Veri kaynağı", options=list(SOURCES), key=key, required=True, width="stretch",
-        format_func=lambda source: f"{_SOURCE_ICONS[source]} {SOURCE_LABELS[source]}",
+        format_func=lambda source: _source_label(topic_key, source),
     )
     return st.session_state[key]
 
@@ -599,7 +610,10 @@ def render_lab(spec: LabSpec) -> None:
             "Sayılar notlardakinden farklıdır; yöntem ve kod aynıdır."
         )
     else:
-        active = render_custom(spec.topic_key, variants.custom)
+        if variants.custom is not None:
+            active = render_custom(spec.topic_key, variants.custom)
+        else:
+            active = render_params(spec.topic_key, variants.params)
         if active is None:
             return
     step = _render_navigation(active)

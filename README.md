@@ -12,7 +12,8 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
   aynısını verir; her adımın Python ve R kodu gösterilir, bütün uygulama tek dosya olarak indirilir.
   Ek veri kaynağı olan konularda sekmenin üstünde veri seçilir: **Notlardaki örnek** (varsayılan),
   **Alternatif örnek** (aynı adımlar, kurgusal veri) ve **Kendi verini yükle** (Excel ya da CSV dosyası yükleme ve
-  sütun seçimi).
+  sütun seçimi); dosya gerektirmeyen konularda üçüncü seçenek **Kendi değerlerini gir** adını
+  taşır (parametreler sayı girişiyle).
 - **Sezgi:** veri üretim süreci (DGP) bilinen kontrollü simülasyonlar. Kaydırıcılarla parametre
   değiştirilir; kod şu anki kaydırıcı değerleriyle üretilir.
 - **Kendini sına:** dört soru türünden 24 soru (çoktan seçmeli, doğru–yanlış, boşluk doldurma, denklem).
@@ -25,9 +26,9 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 | 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı + ek veri kaynakları | 10 | 32 | 3 | 24 |
 | 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı + ek veri kaynakları | 12 | 40 | 3 | 24 |
 | 06 | Olasılığın Temelleri | Yeni yapı + ek veri kaynakları | 9 | 35 | 3 | 24 |
-| 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı | 10 | 61 | 3 | 24 |
-| 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı | 12 | 65 | 3 | 24 |
-| 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı | 8 | 39 | 3 | 24 |
+| 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı + ek veri kaynakları | 10 | 61 | 3 | 24 |
+| 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı + ek veri kaynakları | 12 | 65 | 3 | 24 |
+| 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı + ek veri kaynakları | 8 | 39 | 3 | 24 |
 | 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Yeni yapı | 7 | 30 | 3 | 24 |
 | 11 | Normal Olasılıklar ve Üstel Dağılım | Yeni yapı | 10 | 46 | 3 | 24 |
 | 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Yeni yapı | 6 | 19 | 3 | 24 |
@@ -35,12 +36,18 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
 yolun aynısını verir.
 
-Ek veri kaynakları (alternatif örnek ve kendi verini yükle) şu an Konu 1–6'da vardır. Konu 3'te yüklenen
+Ek veri kaynakları (alternatif örnek ve kendi verini yükle ya da kendi değerlerini gir) şu an Konu 1–9'da vardır. Konu 3'te yüklenen
 veride sınıf sayısı kaydırıcıyla seçilir (öneri ⌈1 + log₂ n⌉); Konu 4'te ağırlıklı ortalama için grup sütunu,
 geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır. Konu 5'te iki grubun yayılımı için tam iki
 kategorili bir grup sütunu, değişim katsayılarının karşılaştırması, kovaryans ve korelasyon için ikinci bir sayısal
 sütun isteğe bağlıdır. Konu 6'da iki kategorik sütunda seçilen kategoriler E ve F olaylarını kurar; zarın yüz sayısı,
-ekip büyüklüğü ve seçilen kişi sayısı kaydırıcılarla seçilir.
+ekip büyüklüğü ve seçilen kişi sayısı kaydırıcılarla seçilir. Konu 7'de koşul ve sonuç sütunlarında seçilen
+kategoriler M ve S olaylarıdır; çapraz tablo, koşullu olasılık, bağımsızlık, olasılık ağacı ve Bayes hesabı bu
+veriden, alarm örneğinin temel oranı, yakalama ve yanlış alarm yüzdeleri kaydırıcılarla kurulur. Konu 8'de kesikli
+sayısal sütunun (en çok 20 farklı değer) göreli frekansları olasılık fonksiyonudur; isteğe bağlı ikinci kesikli
+sütunla ortak dağılım, kovaryans ve bağımsızlık adımları kurulur, kâr fonksiyonunun birim katkısı ve sabit maliyeti
+kaydırıcıdır. Konu 9'da dosya yoktur: binomun n, p ve x değerleri, Poisson için saatlik ortalama, aralık ve x,
+hipergeometrik için N, r, n ve x sayı girişleriyle verilir.
 
 ## İki dilde kod
 

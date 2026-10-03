@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from core.labs import kendi_veri as K
-from core.labs.ornek import CustomChoices, CustomLab, custom_case, md
+from core.labs.ornek import CustomChoices, CustomLab, ParamLab, custom_case, md, parameter_value
 from core.labs.ornekler import get_variants
 from core.labs.spec import LabSpec
 
@@ -263,6 +263,49 @@ def _current_file(topic_key: str, uploaded) -> tuple[str, bytes] | None:
             st.session_state[_file_key(topic_key)] = current
         return current
     return st.session_state.get(_file_key(topic_key))
+
+
+def render_params(topic_key: str, params: ParamLab) -> LabSpec | None:
+    """Dosyasız konularda (Konu 9–12) "Kendi değerlerini gir" paneli: her parametre bir sayı girişidir. Geçerli
+    değerlerle kurulan uygulamayı döndürür (yoksa ``None``); değerler kaynak değişse de oturumda korunur."""
+
+    st.markdown(params.intro)
+    groups = params.groups or ("",)
+    values: dict[str, int | float] = {}
+    with st.container(border=True):
+        for column, group in zip(st.columns(len(groups)), groups):
+            if group:
+                column.markdown(f"**{group}**")
+            for parameter in params.parameters:
+                if parameter.group != (group if params.groups else parameter.group):
+                    continue
+                key = f"{topic_key}_kendi_param_{parameter.key}"
+                _restore(key)
+                integer = parameter.decimals == 0
+                stored = st.session_state.get(key)
+                if not isinstance(stored, (int, float)) or not parameter.minimum <= stored <= parameter.maximum:
+                    st.session_state[key] = parameter_value(parameter)
+                steps = ", ".join(str(step) for step in parameter.steps)
+                value = column.number_input(
+                    parameter.label,
+                    min_value=int(parameter.minimum) if integer else float(parameter.minimum),
+                    max_value=int(parameter.maximum) if integer else float(parameter.maximum),
+                    step=int(parameter.step) if integer else float(parameter.step),
+                    format="%d" if integer else f"%.{parameter.decimals}f",
+                    key=key,
+                    help=f"{parameter.help} Adım: {steps}." if steps else parameter.help or None,
+                )
+                _remember(key)
+                values[parameter.key] = parameter_value(parameter, value)
+        try:
+            if params.validate is not None:
+                params.validate(values)
+            spec = _session(f"{topic_key}_kendi_param_uygulama", tuple(sorted(values.items())),
+                            lambda: params.build(values))
+        except K.UploadError as error:
+            st.error(md(str(error)), icon=":material/error:")
+            return None
+    return spec
 
 
 def render_custom(topic_key: str, custom: CustomLab) -> LabSpec | None:

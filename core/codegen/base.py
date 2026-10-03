@@ -302,6 +302,16 @@ class Generator:
                 f"{c} Betik sonunda sonuçlar uygulamadaki değerlerle karşılaştırılır.",
                 "",
             ]
+        if self.spec.source == "kendi" and not uses_file(self.spec):
+            return [
+                f"{c} {COURSE}",
+                f"{c} Konu {topic} uygulaması, kendi değerleriniz: {self.spec.title}",
+                f"{c} Ders notlarındaki adımlar, uygulamada girdiğiniz değerlerle (§{self.spec.note_section}).",
+                f"{c}",
+                f"{c} Değerler: uygulamadaki sayı girişleri; bu betiğin içinde yazılıdır.",
+                f"{c} Betik sonunda sonuçlar uygulamadaki değerlerle karşılaştırılır.",
+                "",
+            ]
         if self.spec.source == "kendi":
             files = [op.file_name for step in self.spec.steps for op in step.operations if isinstance(op, ReadFile)]
             return [
@@ -429,8 +439,17 @@ def render_step(spec: LabSpec, number: int, language: str) -> str:
 _FILE_SUFFIX = {"notlar": "uygulama", "alternatif": "alternatif", "kendi": "kendi_verim"}
 
 
+def uses_file(spec: LabSpec) -> bool:
+    """Uygulama bir veri dosyası okuyor mu (kendi verini yükle); dosyasız konularda öğrencinin değerleri koddadır."""
+
+    return any(isinstance(op, ReadFile) for step in spec.steps for op in step.operations)
+
+
 def script_filename(spec: LabSpec, language: str) -> str:
-    return f"ikt217_{spec.topic_key}_{_FILE_SUFFIX[spec.source]}.{LANGUAGE_INFO[language].extension}"
+    suffix = _FILE_SUFFIX[spec.source]
+    if spec.source == "kendi" and not uses_file(spec):
+        suffix = "kendi_degerlerim"
+    return f"ikt217_{spec.topic_key}_{suffix}.{LANGUAGE_INFO[language].extension}"
 
 
 def reference_words(spec: LabSpec) -> tuple[str, str, str]:

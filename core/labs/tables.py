@@ -115,6 +115,44 @@ def boundary_label(value: float) -> str:
     return f"{value:.10g}".replace(".", ",")
 
 
+def _short_places(value: float) -> int | None:
+    """Kısa bir değerin ondalık basamağı, uzun değerde ``None``. Kısa değer şu yazımlardan biriyle az basamaklıdır:
+    12 anlamlı basamağa yuvarlanınca en çok 10 basamak (son basamaklarında kayan nokta gürültüsü olan değer:
+    243,35999999999999 → 243,36); en kısa yazımı (repr) 15'ten az anlamlı basamak (yüklenen veri, 0,03125 gibi tam
+    sonuçlar); 15 anlamlı basamağa yuvarlanınca en çok 13 basamak (13 basamaklı bir sonuç ve gürültüsü:
+    −2,1541280961449997 → −2,154128096145). Bölmeyle bulunan değerler (17/21 = 0,8095…, 15 basamakta tek sıfırla biter)
+    uzundur."""
+
+    for text, limit in ((f"{value:.12g}", 10), (repr(value), 14), (f"{value:.15g}", 13)):
+        digits = Decimal(text).normalize().as_tuple()
+        if len(digits.digits) <= limit:
+            return max(0, -digits.exponent)
+    return None
+
+
+def frame_decimals(values) -> int:
+    """Notlar dışındaki kaynaklarda kesirli bir veri çerçevesi sütununun ekrandaki basamağı (en az 2, en çok 15).
+
+    Sütunun en büyük değerinin 10⁻¹²'sinden küçük değerler kayan nokta artığıdır (x = μ iken 1e-30) ve sıfır sayılır.
+    Bütün değerler kısaysa (``_short_places``: veri ya da tam sonuçlar) sütun tam yazılır. Aksi hâlde uzun bir sütundur
+    (bölmeyle bulunan değerler): en az 4 basamak ve en küçük değerin 3 anlamlı basamağı, en çok 13 anlamlı basamak (en
+    büyük değere göre). Uzun bir sütundaki tek tek kısa görünen değerler basamağı uzatmaz: hesaplanan bir değerin kısa
+    görünmesi rastlantı olabilir. Genel uygulamalar metnin andığı ya da tam görünmesi gereken sütunların basamağını
+    kesin değerlerden kurar (``ShowFrame.decimals``)."""
+
+    finite = [float(value) for value in values if np.isfinite(value)]
+    largest = max((abs(value) for value in finite), default=0.0)
+    nonzero = [value for value in finite if abs(value) > 1e-12 * largest]
+    if not nonzero:
+        return 2
+    places = [_short_places(value) for value in nonzero]
+    if all(place is not None for place in places):
+        return min(15, max(2, *places))
+    cap = max(0, 12 - math.floor(math.log10(largest)))
+    smallest = min(abs(value) for value in nonzero)
+    return min(15, cap, max(4, 2 - math.floor(math.log10(smallest))))
+
+
 def decimal_places(value: float, limit: int = 10) -> int:
     """Bir sayıyı tam gösteren en az ondalık basamak (0,25 → 2; 10 → 0; 520000000,75 → 2); en çok ``limit``.
 

@@ -28,10 +28,10 @@ sezgi kurar ve kavramları sınar.
 | `core/quiz/` | Soru türleri, notlandırma, güvenli formül okuma ve konu soru setleri |
 | `core/charts.py` | Plotly grafikleri; `show_figure` tek `st.plotly_chart` çağrısıdır ve eksen adı ister |
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
-| `core/labs/ornek.py`, `core/labs/ornekler.py` | Uygulama sekmesinin ek veri kaynakları: örnek (`Case`), rol (`Role`), ayar (`Setting`), ayrı okunan sütun (`SeparateColumn`), kendi verini yükle tanımı (`CustomLab`), seçimlerden örneğe (`custom_case`), metinler için kesin ondalık sayılar (`kesin`, `ondalik`, `kesin_esit`) ve kayıt |
+| `core/labs/ornek.py`, `core/labs/ornekler.py` | Uygulama sekmesinin ek veri kaynakları: örnek (`Case`), rol (`Role`), ayar (`Setting`), ayrı okunan sütun (`SeparateColumn`), kendi verini yükle tanımı (`CustomLab`), seçimlerden örneğe (`custom_case`), dosyasız konularda kendi değerlerini gir (`Parameter`, `ParamLab`, `parameter_values`), metinler için kesin ondalık sayılar ve kesirler (`kesin`, `ondalik`, `kesin_esit`, `kesir_basamak`, `kesir_metin`; karşılaştırılan yakın değerler için `kesir_ayirt`) ve kayıt |
 | `core/labs/ornek_konuNN.py` | Konunun genel uygulaması (notlardaki adımlar, verisi değiştirilebilir), kurgusal alternatif örnek ve kendi verini yükle rolleri |
 | `core/labs/kendi_veri.py` | Yüklenen dosyayı okuma (Excel; CSV için ayırıcı, ondalık işareti ve kodlamanın algılanması), kodda kullanılacak sütun adları, Türkçe sıralama, temizleme ve doğrulama |
-| `topics/kendi_veri_ui.py` | Kendi verini yükle paneli: dosya yükleme, örnek dosya, sütun ve kategori seçimi, tür tablosu, ayar kaydırıcıları |
+| `topics/kendi_veri_ui.py` | Kendi verini yükle paneli: dosya yükleme, örnek dosya, sütun ve kategori seçimi, tür tablosu, ayar kaydırıcıları; kendi değerlerini gir paneli (sayı girişleri) |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
 Eski yapı (konuya özel `core/topicNN_logic.py` modülleri, `core/question_engine.py` ve
@@ -83,6 +83,12 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   dosyaya, Excel sayfasına ve rol seçimine bağlıdır; bunlar değişince öneri yeniden hesaplanır. Ayardan bağımsız
   denetimler (`CustomLab.validate`) kaydırıcıdan önce çalışır; ayara bağlı bir hata (ör. sınıf sınırları iki dilde
   aynı yazılamıyor) kaydırıcının altında gösterilir.
+- **Kendi değerlerini gir (`ParamLab`):** dosya gerektirmeyen konularda (Konu 9) üçüncü seçenek budur. Her
+  `Parameter` bir sayı girişidir (tam sayı ya da `decimals` ondalıklı; değer aralığa çekilir ve kesin yuvarlanır);
+  başlangıç değerleri alternatif örneğinkilerdir ve kaynak değişse de oturumda korunur. Parametreler arasındaki
+  koşullar (`ParamLab.validate`, ör. x ≤ n) panelin altında açık bir iletiyle gösterilir. Üretilen kod değerleri
+  satır içinde yazar; betik başlığı "kendi değerleriniz" der ve dosya adı `ikt217_konuNN_kendi_degerlerim` olur
+  (`codegen.base.uses_file`).
 - **Ayrı okunan sütun (`Role.separate`):** diğer sütunlardan kısa olabilen bir sütun (Konu 4'te dönemlik yüzde
   değişimler) ana veriden ayrı, kendi `ReadFile` işlemiyle ve yalnız dolu hücreleriyle, dosyadaki sırayla okunur
   (`SeparateColumn`, `Case.extra["separate"]`). Ana verinin satır çıkarma kuralı ve boş hücre notları ona
@@ -122,7 +128,10 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   ile R son basamakta farklı okuyabilir; Excel dosyasında sayılar ikili değerle okunduğu için sorun yoktur).
   Konuya özgü: bütün değerleri aynı sayısal sütun (Konu 3–5); Konu 5'te x ile y için aynı sütun, x'in ya da bir
   grubun değerleri büyüklüklerine göre çok yakın (en büyük − en küçük < 10⁻⁷ × büyüklük), iki gözlemden az olan grup;
-  Konu 6'da iki olay için aynı sütun ve ekip büyüklüğünü aşan seçim (kaydırıcının altında); Konu 4'te değerleri
+  Konu 6'da iki olay için aynı sütun ve ekip büyüklüğünü aşan seçim (kaydırıcının altında); Konu 7'de koşul ve
+  sonuç için aynı sütun; Konu 8'de 2–20 farklı değer dışındaki, mutlak değerce 10⁶ ya da daha büyük ya da dörtten
+  fazla ondalıklı kesikli sütun, x ile y için aynı sütun ve 2–10 farklı değer dışındaki ikinci sütun; Konu 9'da
+  x > n, λ > 50, r > N, n > N ve seçimde mümkün olmayan x (panelin altında); Konu 4'te değerleri
   büyüklüklerine göre birbirine çok yakın sütun (en büyük − en küçük < 10⁻⁹ × büyüklük; grafik eksenleri farkı
   gösteremez); Konu 3'te |x| ≥ 10¹⁰ olan değerler ve hiçbir sınıf sayısının (5–20) sınırlarını iki dilde aynı
   yazamadığı veri (çok küçük ya da çok basamaklı değerler; ileti çarpma ya da ortak sayı çıkarma önerir). Yalnız
@@ -140,11 +149,22 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   ortasındaki bir değer (49,475) bir basamak daha yazılır (`yarim_basamak`); böylece metin ile tablo aynı sayıyı
   gösterir. Düzyazıda yuvarlanmış sayının ya da yüzdenin başında "yaklaşık" vardır. Konu 1–2 ve Konu 3'ün diğer
   adımları kayan noktalı değerle `ornek.esit` kullanır.
-- **Ekran biçimi (notlar dışındaki kaynaklar):** veri tablolarında kısa değerler (15'ten az anlamlı basamak, ör.
-  0,345678 ya da 0,000056) tam yazılır; bölmeyle bulunan uzun değerler en az 4 basamak ve en küçük değerin 3
-  anlamlı basamağıyla; tam sayı denetimi toleranssızdır (1e-11 gibi değerler 0 görünmez). Notlardaki örneğin
-  ekranı değişmez (`lab_ui._decimals(small=False)`). Üretilen kod sınıf tablosunu üstel gösterim olmadan yazdırır
-  (Python `to_string(float_format=…)`, R `format(…, digits = 15, scientific = FALSE)`); notlardaki kod aynıdır.
+- **Ekran biçimi (notlar dışındaki kaynaklar):** bir sütunun bütün değerleri kısaysa (veri ya da tam sonuç:
+  en kısa yazımı 15'ten az anlamlı basamak; son basamaklarındaki kayan nokta gürültüsü atılınca kısa olan değerler de,
+  ör. 243,35999999999999 → 243,36) sütun tam yazılır; aksi hâlde uzun bir sütundur (bölmeyle bulunan değerler, ör.
+  17/21 = 0,8095…): en az 4 basamak ve en küçük değerin 3 anlamlı basamağı, en çok 13 anlamlı basamak. Sütunun en
+  büyük değerinin 10⁻¹²'sinden küçük değerler kayan nokta artığı sayılır (x = μ iken 1e-30). Kural
+  `tables.frame_decimals`'tadır. Genel uygulamalar metnin andığı ya da tam görünmesi gereken sütunlar için basamağı
+  kesin değerlerden kurar ve `ShowFrame.decimals` ile verir (Konu 7'de ağaç, yol ve Bayes tabloları, Konu 8'de f(x)
+  ve hesap sütunları); metin aynı basamakla anar. Ortak basamaklı tablolar (çapraz tablo, ağaç) tam yarımda kalan
+  bir değer için bir basamak daha alır (`ornek.kesir_ortak_basamak`). Tam sayı denetimi toleranssızdır (1e-11 gibi
+  değerler 0 görünmez); eksi değerli tam sayı sütunları tipografik eksiyle yazılır. Notlardaki örneğin ekranı
+  değişmez (`lab_ui._decimals(small=False)`).
+  Üretilen kod sınıf tablosunu üstel gösterim olmadan yazdırır (Python `to_string(float_format=…)`, R
+  `format(…, digits = 15, scientific = FALSE)`); notlardaki kod aynıdır. R betiğinde bir gruplama sırasında (sıklık
+  tablosu, grup özeti, çapraz tablo) R'nin üstel yazacağı bir sayı varsa (100000 → 1e+05, 0.0001 → 1e-04)
+  `options(scipen = 999)` eklenir: tablo satır adları sayının kendisi olur ve kontroller bu adlarla seçilir
+  (`r_gen._needs_scipen`). Kontrol satırları sıfıra yuvarlanan değeri işaretsiz yazar (-0.00 değil).
   Yine yalnız notlar dışında: işaretli sıfır ("−0,00", kayan nokta gürültüsü) işaretsiz yazılır (metrik, tablo,
   skaler tablosu, grafik açıklaması); kutu özeti değerleri kısa ondalık yazımlarıyla tam (11,625) ve sütunları
   serilerin etiketleriyle gösterilir; nokta grafiğindeki başvuru çizgisinin değeri metrikle aynı basamakla yazılır
@@ -255,6 +275,27 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   grafiği açıklaması serinin üstündeki boş bantta durur.
 - Konu 8 Deney 1'in varsayılan ayarları notlardaki Şekil 8.8'in veri üretim sürecidir (Tablo 8.1'in dağılımı,
   n = 100, tohum 217); şekildeki birikimli ortalama yolu Python'da birebir üretilir.
+- `TreeDiagram.branch_decimals`: dallardaki olasılıkların basamağı (varsayılan 2; notların ağaçları değişmez).
+- Genel uygulama (`ornek_konu07`): koşul sütununda seçilen kategori M, sonuç sütununda seçilen kategori S olayıdır
+  (Adım 1–9). Ağaç (Adım 7) M/Mᶜ ve S/Sᶜ dallarıyla `Outcomes` üzerinde kurulur; dal olasılıkları önceki adımlarda
+  veriden hesaplanan P(M), P(S | M), P(S | Mᶜ) skalerleridir. Bayes (Adım 8) aynı ağacı tersinden okur; Bayes tablosu
+  (Adım 9) koşul sütununun bütün kategorileriyle `GroupSummary(as_frame=True)` üzerinde kurulur ve sonsal sütunu
+  Adım 4'ün sütun yüzdeleriyle aynıdır. Adım 10'un temel oranı, yakalama ve yanlış alarm yüzdeleri kaydırıcıdır
+  (tam sayı yüzdeler; 10.000 gözlemlik doğal frekanslar tam sayıdır). Olasılıklar kesirle hesaplanır
+  (`ornek.kesir_basamak`: en çok dört basamakla tam yazılabiliyorsa tam, değilse dört; dört basamakta tam yarımda bir
+  basamak daha, ör. 1/800 = 0,00125).
+- Genel uygulama (`ornek_konu08`): kesikli sütunun göreli frekansları (`GroupSummary(as_frame=True)`) olasılık
+  fonksiyonudur (Adım 1–8 ve 12). Notlardaki sabit örnekler veriden türetilir: Adım 2'nin geçersiz tablosu son
+  olasılığın işaretini çevirip farkı ilk değere ekler (toplam yine 1); Adım 6 dosya sırasıyla birikimli ortalamadır
+  (son nokta tanım gereği E(X)); Adım 8'in B dağılımı aynı ortalamayla kütlesi en küçük ve en büyük değere taşınmış
+  dağılımdır (aynı aralık ve ortalamada en büyük varyans, (μ − a)(b − μ)). İkinci kesikli sütun seçilirse ortak
+  dağılım her gözleme 1/n ağırlık verilerek kurulur (Adım 9–11; Y'si boş satırlar yalnız bu adımlarda çıkarılır);
+  bağımsızlık en olası (x, y) hücresinde denetlenir (eşit olasılıklı çiftler metinde birlikte anılır). Adım 10'da
+  kısa yol formülü E(XY) − E(X)E(Y) büyük değerlerde birbirini götüren iki büyük terimin farkıdır: kayan nokta
+  hatasının üst sınırı gösterilen basamağı etkileyebiliyorsa (`_shortcut_error`) bu metrik gösterilmez, kovaryans ve
+  ρ tanım formülünden gelir ve metin nedenini açıklar. Ortalama, varyans ve kovaryansın basamağı (`_scale`) küçük
+  değerlerde en az 3, büyük değerlerde en çok 13 anlamlı basamaktır. Adım 12'nin birim katkısı ve sabit maliyeti
+  kaydırıcıdır; kâr 4 basamağa yuvarlanır (başa baş değer zarar sayılmaz).
 
 ### Özel kesikli dağılımlar ve sürekli dağılımlar (Konu 9–10)
 
@@ -277,6 +318,13 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   çizgileri eklenebilir. Yatay eksen sabittir (`x_range`); `y_max` verilirse dikey eksen de sabittir ve σ
   büyüyünce eğrinin basıklaştığı görülür. Tek-düzede scipy'nin konum–ölçek biçimi `uniform.pdf(x, a, b − a)`,
   R'de `dunif(x, a, b)`.
+- Genel uygulama (`ornek_konu09`, kendi değerlerini gir): binom n (1–50), p (iki ondalık), x; Poisson saatlik
+  ortalama, aralık (dakika) ve x, λ = saatlik ortalama × t/60 ≤ 50; hipergeometrik N, r, n ve x. Bernoulli dizileri
+  n ≤ 10 iken listelenir (en çok 1024), daha büyük n'de sayı kombinasyonla bulunur. Adım 4 girilen p'yi, 0,50'yi ve
+  1 − p'yi; Adım 6 λ/2, λ ve 2λ'yı aynı eksende çizer; Poisson momentleri kuyruk olasılığı 10⁻²⁰'nin altına inene
+  kadar toplanır. Adım 8 aynı üç modelin P(X ≥ 1), P(Y = 0) ve P(Z ≥ 1) olasılıklarıdır. Binom ve hipergeometrik
+  olasılıklar kesirle (metinde "=" / "≈"); çok küçük olasılıklar üç anlamlı basamak görünecek kadar (en çok 12)
+  basamakla yazılır. R'de tek sütunlu `RowSum` `drop = FALSE` ile yazılır (n = 1).
 - Deneylerin varsayılan ayarları notların örnekleridir (Şekil 9.6'nın p = 0,20 paneli, §9.4'te λ = 3, Tablo
   9.1'deki N = 40, r = 4, n = 8; N(70, 10²), U(120, 140)). Poisson deneyinde gösterilen değerler
   0, …, ⌈2λ + 4√λ + 6⌉ aralığıdır; bu sınırı aşma olasılığı kaydırıcının her değerinde 10⁻¹⁰'dan küçüktür.
@@ -369,9 +417,20 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
   karşılaştırılması; kendi verinde rastgele veri setleriyle bağımsız sayım ve yüzdelik hesabı; mod durumları, grup
   ağırlıkları, ayrı okunan büyüme sütunu, türetilen ad çakışmaları; çok büyük, çok küçük ve uzun ondalıklı
   değerlerde kesin eşitlikler, "yaklaşık" işareti ve basamak sayısı; metin kuralları ve kullanıcı adları.
-- `tests/test_app_smoke.py`: "Kendi verini yükle" seçeneğinde örnek dosyayla bütün adımlar; veri kaynağı değişince
+- `tests/test_konu07_09_ornekler.py`: Konu 7–9 alternatif örneklerinin doğrudan sayım, numpy ve scipy ile
+  doğrulanması; bağımsız ve ayrık olaylar, iki kategorili koşul, yarım noktadaki olasılıkların basamağı (Konu 6
+  dahil); Konu 8'de Y'nin olmadığı ve boş olduğu durumlar, reddedilen sütunlar, iki değerli ve ondalıklı veri;
+  Konu 9'da geçersiz değer iletileri, n > 10, p = 0,50, çok küçük olasılıklar, kesirli λ, tek birimlik seçim ve
+  kendi değerlerle üretilen kodun iki dilde yeniden üretimi; metin kuralları ve metrik başlıklarının sığması.
+  Bağımsız inceleme bulguları için gerileme testleri: yakın olasılıkların basamağı, metin ile tablo/metriğin aynı
+  basamağı, alarm cümlelerinin kaydırıcı uçlarında doğruluğu; başa baş kâr, kâr formülünün yazımı, eşit uzaklıklar,
+  tam σ ve ρ, tek değerli olmayan olay, sıralı dosya, uzun ve negatif değerler, çok küçük ölçekli veri, büyük
+  değerlerde kovaryans, üstel yazılan sayılarla R betiği, eksi sıfırsız çıktı; Konu 9'da x = 0 ve x = n olayları,
+  yarım noktalar, kesirli λ, n = 1 ve n = 2 yazımı.
+- `tests/test_app_smoke.py`: "Kendi verini yükle" seçeneğinde örnek dosyayla bütün adımlar; Konu 9'da "Kendi değerlerini
+  gir" paneli (başlangıç değerleri, panelin altındaki hata, kaynak değişince korunan değerler); veri kaynağı değişince
   dosyanın ve seçimlerin korunması, dosyanın kaldırılması ve yeni adın koda yansıması; Konu 3'te sınıf sayısı
-  kaydırıcısının sınıfları değiştirmesi, ayara bağlı hatanın kaydırıcının altında görünmesi ve Excel sayfası
-  değişince önerinin yeniden hesaplanması.
+  kaydırıcısının sınıfları değiştirmesi, ayara bağlı hatanın kaydırıcının altında görünmesi ve Excel sayfası değişince
+  önerinin yeniden hesaplanması.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

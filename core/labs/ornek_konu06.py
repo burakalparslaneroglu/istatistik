@@ -31,6 +31,8 @@ from core.labs.ornek import (
     Setting,
     TopicVariants,
     free_name,
+    kesir_basamak,
+    kesir_tablo_tex,
     liste,
     md,
     ondalik,
@@ -98,12 +100,11 @@ def _scalar(name: str, label: str, decimals: int = 0) -> Check:
 
 def _digits(value: Fraction) -> int:
     """Olasılığın gösterim basamağı: en çok ``MAX_DIGITS`` basamakla tam yazılabiliyorsa tam (0,175), değilse
-    ``MAX_DIGITS`` (1/6 → 0,1667); en az 2 (notlardaki 0,50)."""
+    ``MAX_DIGITS`` (1/6 → 0,1667); en az 2 (notlardaki 0,50). Kesin değer ``MAX_DIGITS`` basamakta tam yarımdaysa
+    (1/800 = 0,00125) bir basamak daha: kayan noktalı değer yarımı iki yöne de yuvarlayabilir
+    (``ornek.kesir_basamak``)."""
 
-    for digits in range(0, MAX_DIGITS + 1):
-        if (value * 10 ** digits).denominator == 1:
-            return max(2, digits)
-    return MAX_DIGITS
+    return kesir_basamak(value, MAX_DIGITS)
 
 
 def _decimal(value: Fraction) -> Decimal:
@@ -366,7 +367,8 @@ def _step4(case: Case, ctx: dict) -> LabStep:
             f"Klasik yöntem: $m$ eşit olasılıklı sonuç varsa her örnek noktaya $1/m$ atanır; {m} yüzlü adil zarda "
             f"$P(1) = \\cdots = P({m}) = 1/{m} {_sign(one, MAX_DIGITS)} {_prob(one)}$. Göreli frekans yöntemi: "
             f"“{md(ctx['e_label'])}” sütununda {n} gözlemin {count} tanesi “{md(e_pick)}” ise bu kategorinin "
-            f"olasılığı $\\approx {count}/{n} {_sign(share, digits)} {_prob(share, digits)}$ olarak tahmin edilir. İki "
+            f"olasılığı $\\approx {count}/{n} {_sign(share, digits)} {kesir_tablo_tex(share, digits)}$ olarak tahmin "
+            "edilir. İki "
             "durumda da $0 \\le P(E_i) \\le 1$ ve $\\sum P(E_i) = 1$'dir."
         ),
         operations=(

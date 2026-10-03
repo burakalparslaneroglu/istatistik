@@ -396,8 +396,8 @@ def _tree(op: TreeDiagram, data: pd.DataFrame) -> go.Figure:
                 "borderwidth": 1.5, "borderpad": 4, "font": {"size": 14}}
 
     def edge_label(x0: float, y0: float, x1: float, y1: float, value: float) -> dict:
-        return {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2, "text": tr_number(value, 2), "showarrow": False,
-                "yshift": 11, "font": {"size": 13, "color": REFERENCE_COLORS[0]}}
+        return {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2, "text": tr_number(value, op.branch_decimals),
+                "showarrow": False, "yshift": 11, "font": {"size": 13, "color": REFERENCE_COLORS[0]}}
 
     for _, row in firsts.iterrows():
         edges_x += [0, 1, None]

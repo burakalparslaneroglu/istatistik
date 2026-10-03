@@ -97,7 +97,7 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
     app = _run_app()
     assert app.segmented_control(key="konu01_lab_kaynak").value == "notlar"
     for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
-                         ("konu06", 9)):
+                         ("konu06", 9), ("konu07", 10), ("konu08", 12), ("konu09", 8)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
         assert "Kurgusal veri" in _markdown(app)
@@ -107,8 +107,8 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
                 app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
                 assert not app.exception, (topic, language, number)
                 assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
-    app.radio(key="selected_topic").set_value("konu07").run()
-    assert not any(widget.key == "konu07_lab_kaynak" for widget in app.segmented_control)
+    app.radio(key="selected_topic").set_value("konu10").run()
+    assert not any(widget.key == "konu10_lab_kaynak" for widget in app.segmented_control)
 
 
 def test_own_data_upload_runs_every_step() -> None:
@@ -124,9 +124,11 @@ def test_own_data_upload_runs_every_step() -> None:
         "konu04": {"grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"},
         "konu05": {"grup": "Depo", "ikinci": "Teslim süresi (saat)"},
         "konu06": {"olay_e": "Ödeme yöntemi", "olay_f": "Sipariş türü"},
+        "konu07": {"kosul": "Başvuru kanalı", "sonuc": "Başvuru sonucu"},
+        "konu08": {"ikinci": "Aynı gün teslim edilen"},
     }
     for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
-                         ("konu06", 9)):
+                         ("konu06", 9), ("konu07", 10), ("konu08", 12)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
         assert any("dosya yükleyin" in item.value for item in app.info)
@@ -303,3 +305,34 @@ def test_konu06_sliders_set_the_die_and_the_team() -> None:
     _konu06_slider(app, "zar").set_value(12).run()
     app.segmented_control(key=f"{topic}_lab_step").set_value(1).run()
     assert not app.exception and "12 yüzlü adil bir zar" in _markdown(app)
+
+
+def _konu09_input(app: AppTest, name: str):
+    return app.number_input(key=f"konu09_kendi_param_{name}")
+
+
+def test_konu09_own_values_panel() -> None:
+    """Dosyasız konuda üçüncü seçenek "Kendi değerlerini gir"dir: başlangıç değerleri alternatif örneğinkilerdir, değer
+    değişince adımlar yeniden kurulur, geçersiz değerin iletisi panelin altında görünür ve değerler kaynak değişse de
+    korunur."""
+
+    app = _run_app()
+    topic = "konu09"
+    app.radio(key="selected_topic").set_value(topic).run()
+    control = app.segmented_control(key=f"{topic}_lab_kaynak")
+    assert any("Kendi değerlerini gir" in str(option) for option in control.options)
+    control.set_value("kendi").run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    assert [_konu09_input(app, name).value for name in ("n", "p", "x")] == [10, 0.3, 3]
+    for number in range(1, 9):
+        app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
+        assert not app.exception, number
+    _konu09_input(app, "x").set_value(12).run()
+    assert any("n'den" in item.value for item in app.error)
+    _konu09_input(app, "n").set_value(15).run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    app.segmented_control(key=f"{topic}_lab_step").set_value(1).run()
+    assert "listelenmez" in _markdown(app)
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("notlar").run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    assert _konu09_input(app, "n").value == 15

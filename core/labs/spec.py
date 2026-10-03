@@ -238,11 +238,16 @@ class Event:
 
 @dataclass(frozen=True)
 class ShowFrame:
-    """Bir veri çerçevesinin seçili sütunlarını gösterir (ör. örnek uzay ve olayların gösterge sütunları)."""
+    """Bir veri çerçevesinin seçili sütunlarını gösterir (ör. örnek uzay ve olayların gösterge sütunları).
+
+    ``decimals``: notlar dışındaki kaynaklarda (sütun, basamak) önerisi. Genel uygulama basamağı kesin değerlerden
+    kurar ve metin aynı basamakla anar; kayan nokta gürültüsü ekranı değiştirmez. Verilmeyen sütunlar ekran kuralıyla
+    (``tables.frame_decimals``) gösterilir; üretilen kod etkilenmez."""
 
     frame: str
     columns: tuple[str, ...]
     comment: str
+    decimals: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -859,6 +864,8 @@ class TreeDiagram:
     root: str
     title: str
     decimals: int = 3
+    branch_decimals: int = 2
+    """Dallardaki (koşullu) olasılıkların basamağı; ``decimals`` yol sonundaki ortak olasılığınkidir."""
 
 
 @dataclass(frozen=True)

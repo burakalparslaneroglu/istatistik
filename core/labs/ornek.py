@@ -19,6 +19,7 @@ import math
 import re
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_EVEN, Context, Decimal
+from fractions import Fraction
 from typing import Callable, Iterable, Mapping
 
 import pandas as pd
@@ -132,6 +133,124 @@ def yarim_basamak(value: Decimal, decimals: int) -> int:
     if scaled == _KESIN.to_integral_value(scaled) and int(scaled) % 10 == 5:
         return decimals + 1
     return decimals
+
+
+# --- Kesirler (olasılıklar için) ------------------------------------------------------------
+# Veriden gelen olasılıklar sayımların oranıdır (k/n); metindeki "=" / "≈" ve gösterim basamağı bu kesirden kurulur.
+
+def kesir_basamak(value: Fraction, maximum: int = 4, minimum: int = 2) -> int:
+    """Olasılığın gösterim basamağı: en çok ``maximum`` basamakla tam yazılabiliyorsa tam (0,175), değilse
+    ``maximum`` (1/6 → 0,1667); en az ``minimum`` (0,50). Kesin değer ``maximum`` basamakta iki gösterimin tam
+    ortasındaysa (1/800 = 0,00125) bir basamak daha: kayan noktalı değer yarımı iki yöne de yuvarlayabilir, metin ile
+    tablo ayrışırdı."""
+
+    for digits in range(0, maximum + 1):
+        if (value * 10 ** digits).denominator == 1:
+            return max(minimum, digits)
+    scaled = abs(value) * 10 ** (maximum + 1)
+    if scaled.denominator == 1 and scaled.numerator % 10 == 5:
+        return maximum + 1
+    return maximum
+
+
+def kesir_ondalik(value: Fraction) -> Decimal:
+    return _KESIN.divide(Decimal(value.numerator), Decimal(value.denominator))
+
+
+def kesir_isaret(value: Fraction, digits: int) -> str:
+    """Matematik içinde "=" ya da "\\approx": kesir gösterilen basamakla tam yazılabiliyorsa "="."""
+
+    return "=" if (value * 10 ** digits).denominator == 1 else "\\approx"
+
+
+def kesir_esit(value: Fraction, digits: int) -> str:
+    """Düzyazıda "=" ya da "≈" (``kesir_isaret`` ile aynı kural)."""
+
+    return "=" if kesir_isaret(value, digits) == "=" else "≈"
+
+
+def kesir_tex(value: Fraction, digits: int | None = None) -> str:
+    """Olasılık, matematik ifadesinde (0{,}175)."""
+
+    return ondalik_tex(kesir_ondalik(value), kesir_basamak(value) if digits is None else digits)
+
+
+def kesir_sayi(value: Fraction, digits: int | None = None) -> str:
+    """Olasılık, düzyazıda, "yaklaşık" eklenmeden (0,175; 0,1667)."""
+
+    return ondalik(kesir_ondalik(value), kesir_basamak(value) if digits is None else digits)
+
+
+def kesir_metin(value: Fraction, digits: int | None = None) -> str:
+    """Olasılık, düzyazıda; yuvarlanmışsa başında "yaklaşık"."""
+
+    digits = kesir_basamak(value) if digits is None else digits
+    shown = kesir_sayi(value, digits)
+    return shown if kesir_isaret(value, digits) == "=" else f"yaklaşık {shown}"
+
+
+def kesir_tablo_tex(value: Fraction, digits: int) -> str:
+    """Sabit basamaklı bir tabloda da görünen olasılık, matematik ifadesinde: tablonun kayan noktalı değeri nasıl
+    yuvarlıyorsa öyle (3/80 = 0,0375 üç basamakla tabloda 0,037; kesin yarım çift basamağa giderdi: 0,038)."""
+
+    return ondalik_tex(Decimal(f"{float(value):.{digits}f}"))
+
+
+def kesir_yarimda(value: Fraction, digits: int) -> bool:
+    """Kesin değer ``digits`` basamakta iki gösterimin tam ortasında mı (0,000625 beş basamakla)? Kayan noktalı biçim
+    böyle bir değeri iki yöne de yuvarlayabilir; metin (kesin, yarımlar çifte) ile tablo ayrışabilir."""
+
+    scaled = abs(value) * 10 ** (digits + 1)
+    return (value * 10 ** digits).denominator != 1 and scaled.denominator == 1 and scaled.numerator % 10 == 5
+
+
+def kesir_ayirt(*values: Fraction, maximum: int = 12, start: int | None = None) -> int:
+    """Birlikte karşılaştırılan kesirlerin ortak basamağı: farklı olanlar gösterimde de farklı görünecek kadar (en çok
+    ``maximum``; ör. 0,49751 ile 0,4975). Tam yarımdaki bir değerde bir basamak daha (``kesir_basamak`` gibi). Arama
+    ``start`` basamaktan (verilmezse değerlerin ``kesir_basamak``larının en büyüğünden) başlar."""
+
+    distinct = set(values)
+
+    def readable(digits: int) -> bool:
+        if len({format(float(value), f".{digits}f") for value in distinct}) < len(distinct):
+            return False
+        return not any(kesir_yarimda(value, digits) for value in distinct)
+
+    digits = max(kesir_basamak(value) for value in values) if start is None else start
+    while digits < maximum and not readable(digits):
+        digits += 1
+    return digits
+
+
+def kesir_ortak_basamak(*values: Fraction, maximum: int = 12) -> int:
+    """Bir tabloda birlikte gösterilen kesirlerin ortak basamağı: ``kesir_basamak``ların en büyüğü; bu basamakta tam
+    yarımda kalan bir değer varsa (1/1600 = 0,000625 beş basamakla) bir basamak daha. Tablo kayan noktalı değeri
+    biçimler, metin kesin değeri yuvarlar; yarımda ikisi farklı sayı gösterebilirdi."""
+
+    digits = max(kesir_basamak(value) for value in values)
+    while digits < maximum and any(kesir_yarimda(value, digits) for value in values):
+        digits += 1
+    return digits
+
+
+def kesir_gorunur(value: Fraction, maximum: int = 12) -> int:
+    """Sıfırdan farklı bir kesrin (ör. iki oranın farkı) sıfır görünmediği basamak (en çok ``maximum``)."""
+
+    digits = kesir_basamak(value)
+    while value != 0 and digits < maximum and float(f"{float(value):.{digits}f}") == 0:
+        digits += 1
+    return digits
+
+
+def kesir_yuzde(value: Fraction) -> str:
+    """Düzyazıda yüzde: %52,5 ya da yaklaşık %33,3 (en çok bir ondalık)."""
+
+    shown = value * 100
+    digits = next((d for d in range(0, 2) if (shown * 10 ** d).denominator == 1), 1)
+    if digits == 1 and kesir_basamak(shown, 1, 0) == 2:  # %12,25 gibi yarım: iki ondalık
+        digits = 2
+    text = "%" + ondalik(kesir_ondalik(shown), digits)
+    return text if (shown * 10 ** digits).denominator == 1 else f"yaklaşık {text}"
 
 
 def liste(items: list[str]) -> str:
@@ -345,13 +464,61 @@ class CustomLab:
 
 
 @dataclass(frozen=True)
+class Parameter:
+    """Dosyasız konularda (Konu 9–12) öğrencinin girdiği bir sayı; veri panelinde sayı girişidir.
+
+    ``decimals`` 0 ise değer tam sayıdır; değilse bu kadar ondalıkla kesin yuvarlanır (0,25). Değer her zaman
+    [``minimum``, ``maximum``] aralığına çekilir. ``group``: paneldeki sütun başlığı (ör. "Binom")."""
+
+    key: str
+    label: str
+    minimum: float
+    maximum: float
+    default: float
+    step: float = 1
+    decimals: int = 0
+    help: str = ""
+    group: str = ""
+    steps: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class ParamLab:
+    """Dosya yüklenmeyen konuların "Kendi değerlerini gir" tanımı: parametreler ve genel uygulamayı kuran fonksiyon.
+    ``validate`` parametreler arasındaki koşulları denetler (ör. x ≤ n); kullanılamıyorsa ``UploadError``."""
+
+    parameters: tuple[Parameter, ...]
+    build: Callable[[Mapping[str, float]], LabSpec]
+    intro: str
+    groups: tuple[str, ...] = ()
+    validate: Callable[[Mapping[str, float]], None] | None = None
+
+
+def parameter_value(parameter: Parameter, chosen: object = None) -> int | float:
+    """Parametrenin değeri: öğrencinin girdiği ya da varsayılan değer, aralığa çekilmiş ve kesin yuvarlanmış."""
+
+    value = parameter.default if chosen is None else chosen
+    value = min(max(float(value), parameter.minimum), parameter.maximum)
+    if parameter.decimals == 0:
+        return int(kesin_yuvarla(kesin(value), 0))
+    return float(kesin_yuvarla(kesin(value), parameter.decimals))
+
+
+def parameter_values(params: ParamLab, chosen: Mapping[str, object] | None = None) -> dict[str, int | float]:
+    chosen = chosen or {}
+    return {parameter.key: parameter_value(parameter, chosen.get(parameter.key)) for parameter in params.parameters}
+
+
+@dataclass(frozen=True)
 class TopicVariants:
-    """Bir konunun ek veri kaynakları."""
+    """Bir konunun ek veri kaynakları: kurgusal alternatif örnek ve öğrencinin kendisi (dosyayla ``custom`` ya da
+    dosyasız konularda sayı girişleriyle ``params``)."""
 
     alternative: Callable[[], LabSpec]
     story: str
     """Alternatif örneğin tek cümlelik tanımı (sekmenin üstünde gösterilir)."""
     custom: CustomLab | None = None
+    params: ParamLab | None = None
 
 
 # --- Kendi verini yükle: seçimlerden örneğe ---------------------------------------------

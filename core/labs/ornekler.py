@@ -1,4 +1,4 @@
-"""Uygulama sekmesinin ek veri kaynaklarının kaydı (alternatif örnek ve kendi verini yükle).
+"""Uygulama sekmesinin ek veri kaynaklarının kaydı (alternatif örnek; kendi verini yükle ya da kendi değerlerini gir).
 
 Bir konu buraya eklendiğinde Uygulama sekmesinin üstünde veri kaynağı seçimi görünür ve ortak testler o konuyu
 kendiliğinden kapsar. Kayıtta olmayan konularda sekme yalnız notlardaki örneği gösterir.
@@ -6,7 +6,17 @@ kendiliğinden kapsar. Kayıtta olmayan konularda sekme yalnız notlardaki örne
 
 from __future__ import annotations
 
-from core.labs import ornek_konu01, ornek_konu02, ornek_konu03, ornek_konu04, ornek_konu05, ornek_konu06
+from core.labs import (
+    ornek_konu01,
+    ornek_konu02,
+    ornek_konu03,
+    ornek_konu04,
+    ornek_konu05,
+    ornek_konu06,
+    ornek_konu07,
+    ornek_konu08,
+    ornek_konu09,
+)
 from core.labs.ornek import TopicVariants
 
 VARIANTS: dict[str, TopicVariants] = {
@@ -16,6 +26,9 @@ VARIANTS: dict[str, TopicVariants] = {
     "konu04": ornek_konu04.VARIANTS,
     "konu05": ornek_konu05.VARIANTS,
     "konu06": ornek_konu06.VARIANTS,
+    "konu07": ornek_konu07.VARIANTS,
+    "konu08": ornek_konu08.VARIANTS,
+    "konu09": ornek_konu09.VARIANTS,
 }
 
 

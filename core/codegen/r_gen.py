@@ -6,6 +6,9 @@ rastgele sayı üreteci numpy'ninkinden farklıdır: aynı tohum aynı çekiliş
 
 from __future__ import annotations
 
+import math
+from decimal import Decimal
+
 from core.codegen.base import (
     HEAT_LOW,
     PALETTE,
@@ -97,6 +100,43 @@ _FUNCTIONS = {
     **{name: f"as.numeric({{0}} {symbol} {{1}})" for name, symbol in E.COMPARISONS.items()},
 }
 _REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3", "4")))
+_SCIPEN = [
+    "# Büyük ve küçük sayılar (100000, 0.0001) üstel gösterimle (1e+05, 1e-04) yazılmasın: tablo satır ve sütun",
+    "# adları sayının kendisi olur ve değerler bu adlarla seçilir.",
+    "options(scipen = 999)",
+]
+
+
+def _exponential(value: object) -> bool:
+    """R'nin ``as.character``'ı sayıyı üstel gösterimle mi yazar (1e+05, 1e-04)? Üstel yazım sabit yazımdan kısaysa
+    evet (0.00012 ve 120000 sabit kalır). Tablo satır adları (``factor``, ``tapply``) böyle oluşur; koddaki "100000"
+    adıyla seçim boş kalırdı."""
+
+    if isinstance(value, (str, bool)):
+        return False
+    number = float(value)
+    if number == 0 or not math.isfinite(number):
+        return False
+    digits = Decimal(repr(number)).normalize()
+    _, mantissa, exponent = digits.as_tuple()
+    power = exponent + len(mantissa) - 1
+    exponential = len(mantissa) + (1 if len(mantissa) > 1 else 0) + 2 + max(2, len(str(abs(power))))
+    return exponential < len(format(abs(digits), "f"))
+
+
+def _needs_scipen(operations: tuple[Operation, ...]) -> bool:
+    """Gruplama sırasında (sıklık, grup özeti, çapraz tablo) R'nin üstel yazacağı bir sayı var mı?"""
+
+    for op in flatten(operations):
+        if isinstance(op, (GroupSummary, FrequencyTable)):
+            values = op.order
+        elif isinstance(op, CrossTab):
+            values = (*op.row_order, *op.column_order)
+        else:
+            continue
+        if any(_exponential(value) for value in values):
+            return True
+    return False
 
 
 def _rewrite(expression: E.Expr) -> E.Expr:
@@ -305,8 +345,9 @@ class RGenerator(Generator):
 
     # --- Başlık ve yardımcılar ------------------------------------------
     def imports(self, operations: tuple[Operation, ...], *, script: bool = False) -> list[str]:
+        scipen = _SCIPEN + [""] if _needs_scipen(operations) else []
         if not script:
-            return []
+            return scipen
         if any(isinstance(op, ReadFile) and op.file_format == "xlsx" for op in flatten(operations)):
             lines = [
                 "# Excel dosyasını okumak için readxl paketi gerekir; bir kez kurun:",
@@ -316,6 +357,7 @@ class RGenerator(Generator):
             ]
         else:
             lines = ["# Yalnız temel R kullanılır; ek paket gerekmez.", ""]
+        lines += scipen
         if uses_charts(operations):
             lines += [
                 "# Rscript ile (etkileşimsiz) çalıştırıldığında R grafikleri çalışma klasöründe Rplots.pdf",
@@ -356,8 +398,9 @@ class RGenerator(Generator):
                 "kontrol_et <- function(etiket, deger, beklenen, ondalik = 4) {",
                 "  tolerans <- max(0.5 * 10^(-ondalik), 1e-12 * abs(beklenen)) + 1e-12",
                 '  durum <- if (abs(deger - beklenen) <= tolerans) "OK  " else "HATA"',
-                '  cat(sprintf("  %s %s: %.*f  (uygulama: %s)\\n", durum, etiket, ondalik, deger,',
-                '              sprintf("%.*f", ondalik, beklenen)))',
+                "  # sıfıra yuvarlanan değer işaretsiz yazılır (-0.00 değil)",
+                '  yazi <- function(x) sprintf("%.*f", ondalik, if (abs(x) < 0.5 * 10^(-ondalik)) 0 else x)',
+                '  cat(sprintf("  %s %s: %s  (uygulama: %s)\\n", durum, etiket, yazi(deger), yazi(beklenen)))',
                 '  if (abs(deger - beklenen) > tolerans) stop(etiket, " uygulamayla uyuşmuyor.")',
                 "}",
                 "",
@@ -434,7 +477,9 @@ class RGenerator(Generator):
             lower, upper = E.format_number(op.lower), E.format_number(op.upper)
             return [f"# {op.comment}", f"{op.frame} <- data.frame({op.name} = {lower}:{upper})"]
         if isinstance(op, RowSum):
-            return [f"# {op.comment}", f"{op.frame}${op.name} <- rowSums({op.frame}[, {_vector(op.columns)}])"]
+            # Tek sütunda R alt kümeyi vektöre indirir ve rowSums çalışmaz: drop = FALSE (çok sütunda kod değişmez).
+            keep = ", drop = FALSE" if len(op.columns) == 1 else ""
+            return [f"# {op.comment}", f"{op.frame}${op.name} <- rowSums({op.frame}[, {_vector(op.columns)}{keep}])"]
         if isinstance(op, Rectangles):
             lower, width = E.format_number(op.lower), E.format_number(op.width)
             return [
@@ -1383,12 +1428,13 @@ class RGenerator(Generator):
             "for (i in seq_along(ilk_dallar)) {",
             f"  p <- yollar${fp}[yollar${f} == ilk_dallar[i]][1]",
             f'  segments(0, y_kok, 1, y_ilk[i], col = "{PALETTE[0]}", lwd = 2)',
-            f'  text(0.5, (y_kok + y_ilk[i]) / 2, sayi_metni(p, 2), pos = 3, col = "{REFERENCE_COLORS[0]}")',
+            f"  text(0.5, (y_kok + y_ilk[i]) / 2, sayi_metni(p, {op.branch_decimals}), pos = 3, "
+            f'col = "{REFERENCE_COLORS[0]}")',
             "}",
             "for (i in seq_len(n_yol)) {",
             f"  j <- match(yollar${f}[i], ilk_dallar)",
             f'  segments(1, y_ilk[j], 2, y_yol[i], col = "{PALETTE[0]}", lwd = 2)',
-            f"  text(1.5, (y_ilk[j] + y_yol[i]) / 2, sayi_metni(yollar${sp}[i], 2), pos = 3,",
+            f"  text(1.5, (y_ilk[j] + y_yol[i]) / 2, sayi_metni(yollar${sp}[i], {op.branch_decimals}), pos = 3,",
             f'       col = "{REFERENCE_COLORS[0]}")',
             f"  kutu(2, y_yol[i], yollar${s}[i])",
             "  # yolun ortak olasılığı: dal olasılıklarının çarpımı",

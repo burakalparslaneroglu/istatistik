@@ -28,6 +28,10 @@ from core.labs.registry import get_lab
 from core.labs.runner import run_lab
 
 TOPICS = sorted(VARIANTS)
+CUSTOM_TOPICS = [topic for topic in TOPICS if VARIANTS[topic].custom is not None]
+"""Dosya yüklenen konular ("Kendi verini yükle")."""
+PARAM_TOPICS = [topic for topic in TOPICS if VARIANTS[topic].params is not None]
+"""Dosyasız konular ("Kendi değerlerini gir")."""
 R_ENVIRONMENT = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8")
 SAMPLE_ROLES = {
     "konu01": ({"sayisal": "Günlük ciro (bin TL)", "kimlik": "Kafe", "ikili": "Hedef durumu"},
@@ -38,6 +42,8 @@ SAMPLE_ROLES = {
     "konu04": ({"sayisal": "Aylık kira (bin TL)", "grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"}, (), {}),
     "konu05": ({"sayisal": "Teslimat mesafesi (km)", "grup": "Depo", "ikinci": "Teslim süresi (saat)"}, (), {}),
     "konu06": ({"olay_e": "Ödeme yöntemi", "olay_f": "Sipariş türü"}, (), {"olay_e": "Mobil", "olay_f": "Paket"}),
+    "konu07": ({"kosul": "Başvuru kanalı", "sonuc": "Başvuru sonucu"}, (), {"kosul": "Mobil", "sonuc": "Onaylandı"}),
+    "konu08": ({"kesikli": "Online sipariş sayısı", "ikinci": "Aynı gün teslim edilen"}, (), {}),
 }
 
 
@@ -179,7 +185,7 @@ def test_notes_outputs_are_unchanged(key: str) -> None:
 
 # --- Kendi verini yükle: örnek dosya -------------------------------------------------
 
-@pytest.mark.parametrize("topic", TOPICS)
+@pytest.mark.parametrize("topic", CUSTOM_TOPICS)
 def test_uploading_the_sample_file_gives_the_alternative_numbers(topic: str) -> None:
     case, notes = _sample_case(topic)
     custom = VARIANTS[topic].custom.build(case)
@@ -193,7 +199,7 @@ def test_uploading_the_sample_file_gives_the_alternative_numbers(topic: str) -> 
         assert values[key] == pytest.approx(alternative[key], abs=1e-9), key
 
 
-@pytest.mark.parametrize("topic", TOPICS)
+@pytest.mark.parametrize("topic", CUSTOM_TOPICS)
 def test_generated_python_reads_the_uploaded_excel(topic: str, tmp_path: Path) -> None:
     case, _ = _sample_case(topic)
     spec = VARIANTS[topic].custom.build(case)
@@ -213,7 +219,7 @@ def _has_readxl() -> bool:
 
 
 @pytest.mark.skipif(not _has_readxl(), reason="R ya da readxl paketi yok (öğrenci makinesinde bir kez çalıştırın).")
-@pytest.mark.parametrize("topic", TOPICS)
+@pytest.mark.parametrize("topic", CUSTOM_TOPICS)
 def test_generated_r_reads_the_uploaded_excel(topic: str, tmp_path: Path) -> None:
     case, _ = _sample_case(topic)
     spec = VARIANTS[topic].custom.build(case)
@@ -222,6 +228,36 @@ def test_generated_r_reads_the_uploaded_excel(topic: str, tmp_path: Path) -> Non
     assert result.returncode == 0, result.stdout[-1500:] + result.stderr[-1500:]
     assert result.stdout.count("  OK   ") == _checks(spec)
     assert "warning" not in (result.stdout + result.stderr).lower()
+
+
+# --- Kendi değerlerini gir (dosyasız konular) -------------------------------------------
+
+@pytest.mark.parametrize("topic", PARAM_TOPICS)
+def test_default_values_give_the_alternative_numbers(topic: str) -> None:
+    from core.labs.ornek import parameter_values
+
+    params = VARIANTS[topic].params
+    spec = params.build(parameter_values(params))
+    assert spec.source == "kendi"
+    alternative = {(step.number, check.label): check.expected
+                   for step in VARIANTS[topic].alternative().steps for check in step.checks}
+    values = {(step.number, check.label): check.expected for step in spec.steps for check in step.checks}
+    assert set(values) == set(alternative)
+    for key in values:
+        assert values[key] == pytest.approx(alternative[key], abs=1e-12), key
+
+
+@pytest.mark.parametrize("topic", PARAM_TOPICS)
+def test_own_values_script_is_named_and_described_without_a_file(topic: str) -> None:
+    from core.labs.ornek import parameter_values
+
+    params = VARIANTS[topic].params
+    spec = params.build(parameter_values(params))
+    for language in LANGUAGES:
+        assert script_filename(spec, language).startswith(f"ikt217_{topic}_kendi_degerlerim.")
+    script = render_script(spec, "Python")
+    assert "kendi değerleriniz" in script and "veri dosyası" not in script.lower()
+    compile(script, f"{topic}.py", "exec")
 
 
 # --- Dosya okuma ve temizleme ----------------------------------------------------------
@@ -713,6 +749,30 @@ HARD_DATA = {
         "Kod": [1, 2, 3, 1, 2, 2, 1, 3, 3, 1, None, 2],
         "Durum": ["Evet", "Hayır", "Evet", "Hayır", "Evet", "Hayır", "Evet", "Hayır", "Evet", None, "Evet", "Hayır"],
     }), {"olay_e": "Kod", "olay_f": "Durum"}, {"zar": 20, "ekip": 10, "secim": 4}, ";", ","),
+    "konu07-kodlar-bos-uc-ayarlar": ("konu07", pd.DataFrame({
+        "Kanal": [1, 2, 3, 1, 2, 2, 1, 3, 3, 1, None, 2, 3, 1],
+        "Sonuç": ["Onay", "Ret", "Onay", "Ret", "Onay", "Ret", "Onay", "Ret", "Onay", None, "Onay", "Ret", "Ret",
+                  "Onay"],
+    }), {"kosul": "Kanal", "sonuc": "Sonuç"}, {"temel": 50, "yakalama": 100, "yanlis": 0}, ";", ","),
+    "konu07-ayrik-iki-kategori": ("konu07", pd.DataFrame({
+        "Cihaz": ["Mobil", "Mobil", "Masaüstü", "Masaüstü", "Masaüstü", "Mobil", "Masaüstü"],
+        "Alım": ["Hayır", "Hayır", "Evet", "Evet", "Hayır", "Hayır", "Evet"],
+    }), {"kosul": "Cihaz", "sonuc": "Alım"}, {"temel": 1, "yakalama": 50, "yanlis": 50}, ",", "."),
+    "konu07-yarim-nokta": ("konu07", pd.DataFrame({
+        "Grup": ["A"] * 100 + ["B"] * 700, "Durum": ["Evet"] + ["Hayır"] * 99 + ["Evet"] * 300 + ["Hayır"] * 400,
+    }), {"kosul": "Grup", "sonuc": "Durum"}, {}, "\t", ","),
+    "konu08-ondalik-negatif-bos-y": ("konu08", pd.DataFrame({
+        "Değişim": [-1.25, 0, 2, 2, 3.5, -1.25, 7, 2, 0, 0, 3.5, 2, 7, -1.25],
+        "Adet": [0, 1, 1, None, 2, 0, 3, 1, None, 0, 2, 2, 3, 1],
+    }), {"kesikli": "Değişim", "ikinci": "Adet"}, {"katki": 999, "sabit": 9999}, ";", ","),
+    "konu08-iki-deger": ("konu08", pd.DataFrame({"Puan": [0.5, 2.5, 2.5, 0.5, 2.5, 2.5, 0.5, 2.5]}),
+                         {"kesikli": "Puan"}, {"katki": 1, "sabit": 0}, ",", "."),
+    "konu08-yirmi-deger": ("konu08", pd.DataFrame({
+        "x": np.random.default_rng(11).integers(0, 20, 300), "y": np.random.default_rng(12).integers(0, 10, 300),
+    }), {"kesikli": "x", "ikinci": "y"}, {}, ",", "."),
+    "konu08-buyuk-degerler": ("konu08", pd.DataFrame({
+        "x": [999999.9999, 999998.5, 999999.25, 999998.5, 999999.9999, 999997.0001, 999999.25],
+    }), {"kesikli": "x"}, {"katki": 1000, "sabit": 0}, ",", "."),
     "konu06-ayrik": ("konu06", pd.DataFrame({
         "Teslim": ["Geç", "Geç", "Zamanında", "Zamanında", "Zamanında", "Geç", "Zamanında"],
         "Hasar": ["Yok", "Yok", "Var", "Var", "Yok", "Yok", "Yok"],
