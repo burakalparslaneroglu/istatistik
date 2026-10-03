@@ -32,6 +32,7 @@ from core.labs.spec import (
     ReadFile,
     CompleteCases,
     Rectangles,
+    ReplaceMax,
     RowSum,
     Scalar,
     ScalarTable,
@@ -128,6 +129,11 @@ def numeric_columns(spec: LabSpec) -> set[tuple[str, str]]:
                 found.add((op.frame, op.name))
             elif isinstance(op, CompleteCases):
                 found |= {(op.frame, column) for frame, column in list(found) if frame == op.source}
+            elif isinstance(op, ReplaceMax):
+                found |= {(op.frame, column) for frame, column in list(found) if frame == op.source}
+                found.add((op.frame, op.variable))
+            elif isinstance(op, GroupSummary) and op.as_frame:
+                found |= {(op.result, name) for name, _, _ in op.columns}
     return found
 
 
@@ -281,7 +287,7 @@ class Generator:
             files = [op.file_name for step in self.spec.steps for op in step.operations if isinstance(op, ReadFile)]
             return [
                 f"{c} {COURSE}",
-                f"{c} Konu {topic} uygulaması, kendi verin: {self.spec.title}",
+                f"{c} Konu {topic} uygulaması, kendi veriniz: {self.spec.title}",
                 f"{c} Ders notlarındaki adımlar, yüklediğiniz veri dosyasıyla (§{self.spec.note_section}).",
                 f"{c}",
                 f"{c} Veri: {files[0] if files else 'yüklenen dosya'}. Dosyayı bu betikle aynı klasöre koyun",

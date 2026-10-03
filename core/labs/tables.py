@@ -6,7 +6,9 @@ uygulamanın sayısı ile öğrencinin çalıştıracağı kodun sayısı bit d�
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
+from decimal import Decimal
 from itertools import combinations, permutations, product
 
 import numpy as np
@@ -113,12 +115,29 @@ def boundary_label(value: float) -> str:
     return f"{value:.10g}".replace(".", ",")
 
 
+def decimal_places(value: float, limit: int = 10) -> int:
+    """Bir sayıyı tam gösteren en az ondalık basamak (0,25 → 2; 10 → 0; 520000000,75 → 2); en çok ``limit``.
+
+    Sayının en kısa ondalık yazımından (``repr``) okunur; büyük sayılarda da kesirli kısım kaybolmaz.
+    """
+
+    value = float(value)
+    if not math.isfinite(value) or value == 0:
+        return 0
+    exponent = Decimal(repr(value)).normalize().as_tuple().exponent
+    return min(limit, max(0, -int(exponent)))
+
+
 def class_edges(values: pd.Series, width: float, lower: float | None = None,
                 classes: int | None = None) -> np.ndarray:
     """Eşit genişlikli sınıf sınırları: a, a + h, ..., a + k·h.
 
     ``lower`` verilmezse a, en küçük değeri içeren h katıdır (⌊min/h⌋·h) ve k en büyük değeri kapsayan
     en küçük sınıf sayısıdır (⌊(max − a)/h⌋ + 1); böylece her gözlem bir sınıfa düşer.
+
+    ``lower`` verildiğinde ve genişlik ondalıklıysa sınırlar genişliğin ondalık basamağına yuvarlanır: 0,2 + 0,1
+    kayan noktada 0,30000000000000004 olur; sınır tam 0,3 olmalıdır ki 0,3 değerindeki gözlem kendi sınıfına düşsün.
+    Kod bu sınırları değişmez olarak yazar; iki dil aynı ondalık sayıyı okur.
     """
 
     if width <= 0:
@@ -129,6 +148,10 @@ def class_edges(values: pd.Series, width: float, lower: float | None = None,
         classes = int(np.floor((x.max() - lower) / width)) + 1
     elif classes is None or classes < 1:
         raise ValueError("Alt sınır verildiğinde sınıf sayısı da verilmelidir.")
+    else:
+        digits = max(decimal_places(width), decimal_places(lower))
+        if digits:
+            return np.round(lower + width * np.arange(classes + 1), digits)
     return lower + width * np.arange(classes + 1)
 
 
@@ -170,13 +193,60 @@ def class_table(values: pd.Series, edges: np.ndarray, columns: Sequence[str], *,
     return table
 
 
-def stem_leaf(values: pd.Series) -> pd.DataFrame:
-    """Gövde (onlar basamağı) ve yapraklar (birler basamağı); boş gövdeler de satır olarak yer alır."""
+_PLACES = ("birler", "onlar", "yüzler", "binler", "on binler", "yüz binler", "milyonlar", "on milyonlar",
+           "yüz milyonlar", "milyarlar", "on milyarlar", "yüz milyarlar", "trilyonlar", "on trilyonlar",
+           "yüz trilyonlar")
 
-    x = np.sort(values.to_numpy(dtype=float))
-    if np.any(x < 0) or np.any(x != np.round(x)):
-        raise ValueError("Gövde–yaprak gösterimi için negatif olmayan tam sayılar gerekir.")
-    whole = x.astype(int)
+
+def stem_unit_text(unit: int) -> str:
+    """Yaprak biriminin Türkçe yazımı: 10^unit (1, 10, 100, 0,1, 0,01, …)."""
+
+    return str(10 ** unit) if unit >= 0 else "0," + "0" * (-unit - 1) + "1"
+
+
+def stem_leaf_place(unit: int) -> str:
+    """Yaprağın hangi basamak olduğu (yaprak birimi 10^unit): "onlar basamağı", "2. ondalık basamak"."""
+
+    if unit >= 0:
+        return f"{_PLACES[unit]} basamağı" if unit < len(_PLACES) else f"10^{unit} basamağı"
+    return f"{-unit}. ondalık basamak"
+
+
+def stem_unit_note(unit: int) -> str:
+    """Üretilen koddaki açıklama: yaprak hangi basamak, gövde ne, hangi basamaklar atılır."""
+
+    return f"yaprak {stem_leaf_place(unit)}, gövde ondan önceki basamaklar; daha küçük basamaklar kesilir"
+
+
+def stem_leaf_units(values, decimals: int = 0, unit: int = 0) -> np.ndarray:
+    """Sıralı değerlerin yaprak birimi cinsinden tam sayı karşılığı (gövde × 10 + yaprak).
+
+    Notlardaki gösterimde (``decimals = unit = 0``) değerler negatif olmayan tam sayılardır. Diğer durumlarda değer
+    10^decimals ile çarpılıp tam sayıya yuvarlanır (tam sayıya en yakın; yarımlar çifte) ve 10^(decimals + unit)
+    ile tam bölünür: yaprak biriminden küçük basamaklar kesilir (yaprak birimi 10 iken 1565 → 156).
+    """
+
+    x = np.sort(np.asarray(values, dtype=float))
+    if np.any(x < 0):
+        raise ValueError("Gövde–yaprak gösterimi için negatif olmayan değerler gerekir.")
+    if decimals == 0 and unit == 0:
+        if np.any(x != np.round(x)):
+            raise ValueError("Gövde–yaprak gösterimi için negatif olmayan tam sayılar gerekir.")
+        return x.astype(np.int64)
+    if decimals < 0 or unit < -decimals:
+        raise ValueError("Yaprak birimi verinin ondalık hassasiyetinden ince olamaz.")
+    scaled = np.round(x * 10.0 ** decimals) if decimals else x
+    if np.any(scaled != np.round(scaled)) or np.any(scaled >= 2.0 ** 53):
+        raise ValueError("Değerler bu ondalık basamakla tam sayıya çevrilemiyor.")
+    divisor = 10.0 ** (decimals + unit)
+    return (scaled // divisor).astype(np.int64) if divisor != 1 else scaled.astype(np.int64)
+
+
+def stem_leaf(values: pd.Series, decimals: int = 0, unit: int = 0) -> pd.DataFrame:
+    """Gövde ve yapraklar; boş gövdeler de satır olarak yer alır. Notlarda gövde onlar, yaprak birler basamağıdır;
+    ``unit`` ve ``decimals`` için ``stem_leaf_units``."""
+
+    whole = stem_leaf_units(values, decimals, unit)
     stems, leaves = whole // 10, whole % 10
     rows = range(int(stems.min()), int(stems.max()) + 1)
     return pd.DataFrame(

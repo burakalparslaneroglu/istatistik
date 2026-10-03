@@ -1,7 +1,7 @@
 """Konu 2 genel uygulaması: kategorik verileri tablo ve grafiklerle özetlemek.
 
 Ders notlarındaki adımlar (§2.1–§2.12) aynı numaralarla, verisi değiştirilebilir biçimde yazılır. Alternatif örnek
-kurgusal bir kafe veri setidir; "kendi verin" seçeneğinde aynı adımlar öğrencinin dosyasıyla kurulur. Notlardaki
+kurgusal bir kafe veri setidir; "kendi verini yükle" seçeneğinde aynı adımlar öğrencinin dosyasıyla kurulur. Notlardaki
 uygulama (``core.labs.konu02``) değişmez.
 """
 

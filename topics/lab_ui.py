@@ -8,6 +8,7 @@ notlardaki örnek, kurgusal alternatif örnek ya da öğrencinin kendi dosyası 
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Callable
 
 import numpy as np
@@ -16,7 +17,7 @@ import streamlit as st
 
 from core.charts import CHART_TYPES, figure_for, show_figure, tr_number
 from core.codegen.base import LANGUAGE_INFO, LANGUAGES, render_script, render_step, script_filename
-from core.labs.ornek import SOURCE_LABELS, md
+from core.labs.ornek import SOURCE_LABELS, kesin, md, ondalik
 from core.labs.ornekler import get_variants
 from core.labs.registry import get_lab
 from core.labs.runner import LabRun, LabState, run_lab, run_operations
@@ -42,6 +43,7 @@ from core.labs.spec import (
     Percentile,
     PieChart,
     ReadFile,
+    ReplaceMax,
     Scalar,
     ScalarTable,
     Selections,
@@ -102,6 +104,30 @@ def _boundary(value: float) -> str:
     return tr_number(value, 0 if float(value).is_integer() else 2)
 
 
+def _short(value: float) -> Decimal:
+    """Sayının 15 anlamlı basamaklı kısa yazımı: kayan nokta gürültüsü (0,0011250000000000001) atılır."""
+
+    return Decimal(f"{float(value):.15g}").normalize()
+
+
+def _places(value: float) -> int:
+    return max(0, -_short(value).as_tuple().exponent)
+
+
+def _midpoint(value: float) -> str:
+    """Sınıf orta noktası: tam sayıysa ondalıksız, değilse en az 2 basamak; 0,0125 gibi değerler tam yazılır."""
+
+    if float(value).is_integer():
+        return tr_number(value, 0)
+    return tr_number(value, max(2, _places(value)))
+
+
+def _value_text(value: float) -> str:
+    """Altyazıdaki tek bir sayı: üstel gösterim yok (8,79e+14 değil); kayan nokta gürültüsü atılır."""
+
+    return ondalik(kesin(value), _places(value))
+
+
 def _index_text(item) -> str:
     """Satır adı: ondalık sayılar Türkçe yazımla (1,5; −1); ondalıksız değerde ",0" yazılmaz."""
 
@@ -150,7 +176,7 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
         return _formatted(table, formats, "Kategori", label)
     if isinstance(op, ClassTable):
         formats = {
-            "orta_nokta": _boundary, "frekans": _count, "goreli": lambda v: tr_number(v, 3),
+            "orta_nokta": _midpoint, "frekans": _count, "goreli": lambda v: tr_number(v, 3),
             "yuzde": lambda v: tr_number(v, 1, True), "kumulatif_frekans": _count,
             "kumulatif_goreli": lambda v: tr_number(v, 3), "kumulatif_yuzde": lambda v: tr_number(v, 1, True),
         }
@@ -188,7 +214,7 @@ def _plain(text: str) -> str:
 def crosstab_caption(op: CrossTab, label: Callable[[str], str] = lambda name: name,
                      escape: Callable[[str], str] = _plain) -> str:
     """Çapraz tablonun ne gösterdiği: sayılar mı, hangi paydayla yüzdeler mi, hangi alt grupta mı. ``escape``:
-    kullanıcının adlarını Markdown'a güvenli yazan fonksiyon (kendi verin)."""
+    kullanıcının adlarını Markdown'a güvenli yazan fonksiyon (kendi verini yükle)."""
 
     if op.weights is not None:
         kind = (f"**Çapraz tablo — toplanan sütun: {escape(label(op.weights))}** (her hücre, o hücreye düşen "
@@ -214,22 +240,43 @@ def show_table(shown) -> None:
     st.dataframe(shown, hide_index=True, width="stretch", height=height)
 
 
-def _decimals(values: pd.Series) -> int:
-    """Kesirli bir sütunun gösterim basamağı: en az 2 (notlardaki 0,25 ve 17,50 gibi), en çok 4."""
+def _decimals(values: pd.Series, small: bool = False) -> int:
+    """Kesirli bir sütunun gösterim basamağı: en az 2 (notlardaki 0,25 ve 17,50 gibi), en çok 4.
 
+    ``small`` (notlar dışındaki kaynaklar; notların ekranı değişmez): veri gibi kısa değerler (15'ten az anlamlı
+    basamak, ör. 0,345678 ya da 0,000056) tam yazılır; bölmeyle bulunan uzun değerler (25,3333…) en az 4 basamak ve en
+    küçük değerin 3 anlamlı basamağıyla (en çok 15)."""
+
+    if small:
+        nonzero = [_short(value) for value in values if value != 0 and np.isfinite(value)]
+        if not nonzero:
+            return 2
+        if max(len(item.as_tuple().digits) for item in nonzero) < 15:
+            return min(15, max(2, max(-item.as_tuple().exponent for item in nonzero)))
+        smallest = min(abs(float(item)) for item in nonzero)
+        return min(15, max(4, 2 - int(np.floor(np.log10(smallest)))))
     for decimals in (2, 3):
         if np.allclose(values, np.round(values, decimals), rtol=0, atol=1e-9):
             return decimals
     return 4
 
 
-def _with_blanks(values: pd.Series) -> pd.Series:
+def _whole(values: pd.Series, small: bool = False) -> bool:
+    """Sütunun bütün değerleri tam sayı mı. Notlarda 10⁻⁹ toleransla; diğer kaynaklarda tam olarak (1e-11 gibi çok
+    küçük değerler 0 görünmesin)."""
+
+    if small:
+        return bool((values == np.round(values)).all())
+    return bool(np.allclose(values, np.round(values), rtol=0, atol=1e-9))
+
+
+def _with_blanks(values: pd.Series, small: bool = False) -> pd.Series:
     """Boş hücresi olan sütunun ekran biçimi: değerler metin, boş hücre boş metin; sayılar Türkçe yazımla."""
 
     present = values.dropna()
     if pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values):
         numbers = present.astype(float)
-        decimals = 0 if np.allclose(numbers, np.round(numbers), rtol=0, atol=1e-9) else _decimals(numbers)
+        decimals = 0 if _whole(numbers, small) else _decimals(numbers, small)
         return values.map(lambda value: "" if pd.isna(value) else tr_number(value, decimals))
     return values.map(lambda value: "" if pd.isna(value) else value)
 
@@ -242,26 +289,27 @@ def _frame_label(name: str, label: Callable[[str], str]) -> str:
     return own if own != name else _COLUMN_LABELS.get(name, name)
 
 
-def _frame(frame: pd.DataFrame, label: Callable[[str], str]):
+def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False):
     """Veri çerçevesinin ekran biçimi: tam sayı değerli sütunlar tam sayı, kesirli sütunlar ondalık virgülle.
 
-    Kesirli sütunlar Styler ile biçimlenir; sütun sayısal kaldığı için sağa hizalı görünür.
+    Kesirli sütunlar Styler ile biçimlenir; sütun sayısal kaldığı için sağa hizalı görünür. ``small``: bkz.
+    ``_decimals``.
     """
 
     shown = frame.copy()
     formats: dict[str, Callable[[float], str]] = {}
     for column in shown.columns:
         if shown[column].isna().any():  # kendi verindeki boş hücreler boş görünür ("None" ya da "nan" değil)
-            shown[column] = _with_blanks(shown[column])
+            shown[column] = _with_blanks(shown[column], small)
             continue
         if shown[column].dtype.kind != "f":
             continue
-        if np.allclose(shown[column], np.round(shown[column]), rtol=0, atol=1e-9):
+        if _whole(shown[column], small):
             shown[column] = shown[column].round().astype(int)
             if (shown[column] < 0).any():  # tipografik eksi: −10
                 formats[column] = lambda value: tr_number(value, 0)
         else:
-            formats[column] = lambda value, decimals=_decimals(shown[column]): tr_number(value, decimals)
+            formats[column] = lambda value, decimals=_decimals(shown[column], small): tr_number(value, decimals)
     rename = {column: _frame_label(str(column), label) for column in shown.columns}
     shown = shown.rename(columns=rename)
     if not formats:
@@ -340,9 +388,10 @@ def _input_only(operations, index: int, state: LabState) -> bool:
 
 
 def render_operations(operations, state: LabState, label: Callable[[str], str], key_prefix: str,
-                      escape: Callable[[str], str] = _plain) -> None:
+                      escape: Callable[[str], str] = _plain, small: bool = False) -> None:
     """İşlemlerin sonuçlarını sırayla gösterir; art arda gelen tek sayılar tek satırda toplanır. ``escape``: başlık ve
-    etiketlerdeki kullanıcı adlarını Markdown'a güvenli yazar (kendi verin; notlardaki metinler olduğu gibi)."""
+    etiketlerdeki kullanıcı adlarını Markdown'a güvenli yazar (kendi verini yükle; notlardaki metinler olduğu gibi).
+    ``small``: çok küçük değerli sütunlar sıfır görünmesin (notlar dışındaki kaynaklar; bkz. ``_decimals``)."""
 
     pending: list[tuple[str, str]] = []
     for index, op in enumerate(operations):
@@ -363,36 +412,43 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
                 grid = pd.DataFrame(values.reshape(-1, op.layout), columns=[str(i) for i in range(1, op.layout + 1)])
                 show_table(_frame(grid, str))
             else:
-                show_table(_frame(frame, label))
+                show_table(_frame(frame, label, small))
         elif isinstance(op, FromCounts):
             counts = pd.DataFrame([tuple(row) for row in op.rows], columns=[*op.columns, "sayi"])
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(counts, label))
+            show_table(_frame(counts, label, small))
             st.caption(f"Her satır sayısı kadar tekrarlanır: toplam {_count(len(state.frames[op.frame]))} gözlem.")
         elif isinstance(op, ReadFile):
             frame = state.frames[op.frame]
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(frame, label))
+            show_table(_frame(frame, label, small))
             dropped = f" Temel sütunlarda boş hücre bulunan {_count(op.dropped)} satır çıkarıldı." if op.dropped else ""
             st.caption(f"Analizde {_count(len(frame))} gözlem var.{dropped}")
         elif isinstance(op, CompleteCases):
             st.caption(f"{op.comment}: {_count(len(state.frames[op.frame]))} gözlem.")
+        elif isinstance(op, ReplaceMax):
+            before = float(state.frames[op.source][op.variable].max())
+            after = float(state.frames[op.frame][op.variable].max())
+            st.caption(f"{escape(op.comment)}: en büyük gözlem {_value_text(before)} yerine {_value_text(after)}.")
         elif isinstance(op, (Outcomes, Selections)):
             frame = state.frames[op.frame]
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(frame, label))
+            show_table(_frame(frame, label, small))
             noun = "Sonuç" if isinstance(op, Outcomes) else "Seçim"
             st.caption(f"{noun} sayısı: {_count(len(frame))}.")
         elif isinstance(op, ShowFrame):
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(state.frames[op.frame][list(op.columns)], label))
+            show_table(_frame(state.frames[op.frame][list(op.columns)], label, small))
         elif isinstance(op, MapCodes):
             frame = state.frames[op.frame][[op.source, op.name]].head(8)
             st.markdown(f"**{escape(op.comment)}**")
-            show_table(_frame(frame, label))
+            show_table(_frame(frame, label, small))
         elif isinstance(op, CrossTab):
             st.markdown(crosstab_caption(op, label, escape))
             show_table(display_table(op, state.tables[op.result], label))
+        elif isinstance(op, GroupSummary) and op.as_frame and any(
+                isinstance(later, ShowFrame) and later.frame == op.result for later in operations[index + 1:]):
+            continue  # grup özeti aynı adımda türetilen sütunlarıyla birlikte bir kez gösterilir
         elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf,
                              JoinColumns, BoxSummary)):
             show_table(display_table(op, state.tables[op.result], label))
@@ -534,7 +590,7 @@ def render_lab(spec: LabSpec) -> None:
         else:
             state = _state_through(spec.topic_key, step.number, source)
         render_operations(step.operations, state, active.label, f"{spec.topic_key}_{source}_adim{step.number}",
-                          md if source == "kendi" else _plain)
+                          md if source == "kendi" else _plain, small=source != "notlar")
         if source == "notlar":
             _render_checks(step, _run(spec.topic_key))
     if step.takeaway:

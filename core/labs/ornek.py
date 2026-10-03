@@ -2,7 +2,7 @@
 
 Ders notlarının çözümlü örnekleri (``core.labs.konuNN``) değişmez. Her konu için ek olarak bir **genel uygulama**
 yazılır (``core.labs.ornek_konuNN``): aynı adımlar, aynı numaralar ve aynı işlemler, fakat veri bir ``Case``'ten gelir.
-Alternatif örnek, genel uygulamanın kurgusal bir veriyle kurulmuş hâlidir; "kendi verin" seçeneğinde aynı genel
+Alternatif örnek, genel uygulamanın kurgusal bir veriyle kurulmuş hâlidir; "kendi verini yükle" seçeneğinde aynı genel
 uygulama öğrencinin dosyasıyla kurulur. Böylece iki ek kaynak tek bir tanımı paylaşır.
 
 Notlar dışındaki kaynaklarda kontrollerin beklenen değerleri uygulamanın kendi hesabıdır (``with_app_values``):
@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field, replace
+from decimal import ROUND_HALF_EVEN, Context, Decimal
 from typing import Callable, Iterable, Mapping
 
 import pandas as pd
@@ -28,7 +29,7 @@ from core.labs.spec import LabSpec, Operation
 SOURCE_LABELS = {
     "notlar": "Notlardaki örnek",
     "alternatif": "Alternatif örnek",
-    "kendi": "Kendi verin",
+    "kendi": "Kendi verini yükle",
 }
 POSITIVE_WORDS = ("1", "evet", "var", "geçti", "başarılı", "tuttu", "memnun", "dönüştü", "doğru", "olumlu", "kabul",
                   "yes", "true")
@@ -55,7 +56,9 @@ def yuzde(value: float, decimals: int = 1) -> str:
 def kisa(value: float, decimals: int = 3) -> str:
     """Gereksiz sıfırları atılmış Türkçe sayı (0,320 → 0,32; 15,0 → 15)."""
 
-    text = f"{value:.{decimals}f}".rstrip("0").rstrip(".")
+    text = f"{value:.{decimals}f}"
+    if "." in text:  # yalnız ondalık kısmın sıfırları atılır (20 → 20, 0,320 → 0,32)
+        text = text.rstrip("0").rstrip(".")
     if text in ("-0", ""):
         text = "0"
     return text.replace(".", ",").replace("-", "−")
@@ -68,10 +71,67 @@ def tex(value: float, decimals: int = 3) -> str:
 
 
 def esit(value: float, decimals: int) -> str:
-    """Gösterilen (yuvarlanmış) değer tam değere eşitse "=", değilse "\\approx" (notlardaki kural)."""
+    """Gösterilen (yuvarlanmış) değer tam değere eşitse "=", değilse "\\approx" (notlardaki kural). Karşılaştırma
+    göreli 10⁻¹² düzeyindedir: yalnız kayan nokta gürültüsü yutulur; büyük sayılarda da yuvarlama "≈" ile yazılır."""
 
     shown = float(f"{value:.{decimals}f}")
-    return "=" if abs(shown - value) <= 1e-9 * max(1.0, abs(value)) else "\\approx"
+    return "=" if abs(shown - value) <= 1e-12 * max(1.0, abs(value)) else "\\approx"
+
+
+# --- Kesin ondalık sayılar (metinler için) ----------------------------------------------------
+# Metindeki "=" ile "≈" ayrımı ve "bu değer veride gözlenir mi" gibi yargılar kayan nokta toleransıyla değil, verinin
+# kısa ondalık yazımından kurulan kesin değerlerle verilir; böylece çok büyük ya da çok küçük değerlerde de doğru kalır.
+
+_KESIN = Context(prec=60)
+
+
+def kesin(value: float) -> Decimal:
+    """Kayan noktalı sayının kısa ondalık yazımı, kesin bir ondalık sayı olarak (0.30000000000000004 değil, dosyadaki
+    gibi 0.3)."""
+
+    return Decimal(repr(float(value)))
+
+
+def kesin_yuvarla(value: Decimal, decimals: int) -> Decimal:
+    """Ondalık sayının ``decimals`` basamağa yuvarlanmışı (yarımlar çift basamağa, Python'un biçimlemesi gibi)."""
+
+    return value.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_EVEN, context=_KESIN)
+
+
+def ondalik(value: Decimal, decimals: int | None = None) -> str:
+    """Ondalık sayının Türkçe yazımı (2,5; 10; −0,25); ``decimals`` verilirse o basamağa yuvarlanır. Gereksiz sıfır ve
+    −0 yazılmaz."""
+
+    if decimals is not None:
+        value = kesin_yuvarla(value, decimals)
+    if value.is_zero():
+        return "0"
+    text = format(value.normalize(_KESIN), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text.replace(".", ",").replace("-", "−")
+
+
+def ondalik_tex(value: Decimal, decimals: int | None = None) -> str:
+    """Matematik ifadesi içindeki ondalık sayı (0{,}25)."""
+
+    return ondalik(value, decimals).replace(",", "{,}")
+
+
+def kesin_esit(value: Decimal, decimals: int) -> str:
+    """Kesin değer, ``decimals`` basamakla gösterilen değere eşitse "=", değilse "\\approx"."""
+
+    return "=" if kesin_yuvarla(value, decimals) == value else "\\approx"
+
+
+def yarim_basamak(value: Decimal, decimals: int) -> int:
+    """Gösterim basamağı: kesin değer tam iki gösterimin ortasındaysa (49,475 iki basamakla) bir basamak daha.
+    Böylece metin ile tablo aynı sayıyı gösterir; kayan noktalı hesap böyle bir yarımı iki yöne de yuvarlayabilir."""
+
+    scaled = _KESIN.scaleb(_KESIN.abs(value), decimals + 1)
+    if scaled == _KESIN.to_integral_value(scaled) and int(scaled) % 10 == 5:
+        return decimals + 1
+    return decimals
 
 
 def liste(items: list[str]) -> str:
@@ -80,6 +140,14 @@ def liste(items: list[str]) -> str:
     if len(items) <= 1:
         return "".join(items)
     return ", ".join(items[:-1]) + " ve " + items[-1]
+
+
+def sayilar(items: list[str]) -> str:
+    """Sayıların sıralaması: ondalık virgüllü bir sayı varsa ayırıcı noktalı virgüldür ("2,15; 2,2 ve 2,37")."""
+
+    if len(items) <= 1 or not any("," in item for item in items):
+        return liste(items)
+    return "; ".join(items[:-1]) + " ve " + items[-1]
 
 
 _MARKDOWN = re.compile(r"([\\`*_\[\]<>#|$~&])")
@@ -169,7 +237,7 @@ def with_app_values(spec: LabSpec) -> LabSpec:
     return replace(spec, steps=tuple(steps))
 
 
-# --- Kendi verin: roller ----------------------------------------------------------------
+# --- Kendi verini yükle: roller --------------------------------------------------------
 
 @dataclass(frozen=True)
 class Role:
@@ -200,11 +268,42 @@ class Role:
     """Tür seçimi olan konularda bu rolün sabit türü (ör. "Kimlik etiketi")."""
     allowed_types: tuple[str, ...] = ()
     """Tür seçimi olan konularda bu rol için seçilebilecek türler (boşsa hepsi)."""
+    separate: bool = False
+    """Seçilirse sütun ana veriden ayrı okunur: yalnız kendi dolu hücreleri, dosyadaki sırayla (ör. dönemlik yüzde
+    değişimler; sütun diğerlerinden kısa olabilir). Ana verinin satır çıkarma kuralı bu sütuna uygulanmaz; değerleri
+    ``Case.extra["separate"]`` içindedir."""
+
+
+@dataclass(frozen=True, eq=False)
+class SeparateColumn:
+    """Ayrı okunan bir sütun (``Role.separate``): yükleme işlemleri, çerçeve, koddaki sütun adı ve değerler."""
+
+    load: tuple[Operation, ...]
+    frame: str
+    column: str
+    values: pd.Series
+
+
+@dataclass(frozen=True)
+class Setting:
+    """Kendi verinde öğrencinin seçtiği bir tam sayı ayarı (ör. sınıf sayısı); veri panelinde kaydırıcıdır.
+
+    ``default``: temizlenmiş veri ve rol → sütun eşlemesinden önerilen değer (ör. gözlem sayısına göre); öğrenci
+    değiştirmezse bu değer kullanılır. Değer her zaman [``minimum``, ``maximum``] aralığına çekilir.
+    """
+
+    key: str
+    label: str
+    minimum: int
+    maximum: int
+    default: Callable[[pd.DataFrame, Mapping[str, str]], int]
+    help: str
+    steps: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
 class CustomLab:
-    """Bir konunun "kendi verin" tanımı: roller, genel uygulamayı kuran fonksiyon ve örnek dosya."""
+    """Bir konunun "kendi verini yükle" tanımı: roller, genel uygulamayı kuran fonksiyon ve örnek dosya."""
 
     roles: tuple[Role, ...]
     build: Callable[[Case], LabSpec]
@@ -222,6 +321,8 @@ class CustomLab:
     """Bir sütun için önerilen tür seçeneği (sütun, rolü)."""
     validate: Callable[[Case], None] | None = None
     """Konuya özgü ek denetim (ör. zaman sütunu artan sırada mı); kullanılamıyorsa ``UploadError``."""
+    settings: tuple[Setting, ...] = ()
+    """Öğrencinin seçtiği tam sayı ayarları (ör. Konu 3'te sınıf sayısı); değerleri ``Case.extra["settings"]``."""
 
 
 @dataclass(frozen=True)
@@ -234,7 +335,7 @@ class TopicVariants:
     custom: CustomLab | None = None
 
 
-# --- Kendi verin: seçimlerden örneğe -----------------------------------------------------
+# --- Kendi verini yükle: seçimlerden örneğe ---------------------------------------------
 
 ORDER_TEXT = {
     "alfabetik": "alfabetik sırayla",
@@ -249,7 +350,8 @@ class CustomChoices:
 
     ``roles``: rol → dosyadaki sütun adı (seçilmediyse ``None``); ``extra``: veri tablosuna eklenecek diğer sütunlar;
     ``order``: kategori sırası kuralı (``kendi_veri.ORDER_RULES``); ``picks``: rol → seçilen kategori; ``types``:
-    dosyadaki sütun adı → tür seçeneği (``CustomLab.type_choices``).
+    dosyadaki sütun adı → tür seçeneği (``CustomLab.type_choices``); ``settings``: ayar → seçilen değer
+    (``CustomLab.settings``; verilmeyen ayar önerilen değeri alır).
     """
 
     roles: Mapping[str, str | None]
@@ -257,6 +359,7 @@ class CustomChoices:
     order: str = "alfabetik"
     picks: Mapping[str, str] = field(default_factory=dict)
     types: Mapping[str, str] = field(default_factory=dict)
+    settings: Mapping[str, int] = field(default_factory=dict)
 
 
 def _selections(custom: CustomLab, table, choices: CustomChoices):
@@ -278,7 +381,7 @@ def _selections(custom: CustomLab, table, choices: CustomChoices):
     required: dict[str, bool] = {}
     for role in custom.roles:
         original = choices.roles.get(role.key)
-        if not original:
+        if not original or role.separate:  # ayrı okunan sütun ana veriye girmez (bkz. ``_separate``)
             continue
         if original not in table.columns:
             raise K.UploadError(f"“{original}” sütunu dosyada yok.")
@@ -324,6 +427,38 @@ def _types(custom: CustomLab, table, choices: CustomChoices, selections, roles: 
     return types
 
 
+def _separate(custom: CustomLab, table, choices: CustomChoices, taken: set[str]) -> dict[str, SeparateColumn]:
+    """Ayrı okunan rollerin sütunları: her biri kendi ``ReadFile`` işlemiyle, yalnız dolu hücreleriyle okunur."""
+
+    from core.labs import kendi_veri as K
+
+    columns: dict[str, SeparateColumn] = {}
+    for role in custom.roles:
+        original = choices.roles.get(role.key)
+        if not role.separate or not original:
+            continue
+        if original not in table.columns:
+            raise K.UploadError(f"“{original}” sütunu dosyada yok.")
+        if all(K.clean_text(value) is None for value in table.frame[original]):
+            raise K.UploadError(f"“{original}” sütununda dolu hücre yok; “{role.label}” için başka bir sütun seçin ya "
+                                "da seçimi kaldırın.")
+        name = K.code_name(original, taken)
+        taken.add(name)
+        frame = f"veri_{role.key}"
+        part = K.prepare(table, [K.Selection(name, original, role.use, required=True)], frame=frame,
+                         comment=f"{role.label}: sütunun dolu hücreleri, dosyadaki sırayla")
+        # Boş hücreler bu sütunun doğal parçasıdır (ör. dört yıllık artış, on beş satırlık veri): not yazılmaz.
+        columns[role.key] = SeparateColumn((replace(part.read, dropped=0),), frame, name, part.frame[name])
+    return columns
+
+
+def setting_value(setting: Setting, data: pd.DataFrame, roles: Mapping[str, str], chosen: object = None) -> int:
+    """Ayarın değeri: öğrencinin seçimi ya da önerilen değer, [en küçük, en büyük] aralığına çekilmiş."""
+
+    value = setting.default(data, roles) if chosen is None else int(chosen)
+    return min(max(int(value), setting.minimum), setting.maximum)
+
+
 def custom_case(custom: CustomLab, table, choices: CustomChoices) -> tuple[Case, tuple[str, ...]]:
     """Öğrencinin dosyası ve seçimlerinden genel uygulamanın örneğini kurar; kullanılamıyorsa ``UploadError``."""
 
@@ -336,10 +471,15 @@ def custom_case(custom: CustomLab, table, choices: CustomChoices) -> tuple[Case,
         raise K.UploadError(f"Analiz için en az {custom.min_rows} gözlem gerekir; seçilen sütunlarda {len(data)} "
                             "gözlem var.")
     names = {item.original: item.name for item in selections}
-    roles = {role.key: names[choices.roles[role.key]] for role in custom.roles if choices.roles.get(role.key)}
+    roles = {role.key: names[choices.roles[role.key]] for role in custom.roles
+             if choices.roles.get(role.key) and not role.separate}
     labels = {item.name: item.original for item in selections}
+    separate = _separate(custom, table, choices, set(labels))
+    for key, part in separate.items():
+        roles[key] = part.column
+        labels[part.column] = choices.roles[key]
     for role in custom.roles:
-        if role.key not in roles:
+        if role.key not in roles or role.separate:
             continue
         column = roles[role.key]
         values = data[column]
@@ -355,7 +495,7 @@ def custom_case(custom: CustomLab, table, choices: CustomChoices) -> tuple[Case,
     orders: dict[str, tuple] = {}
     levels: dict[str, str] = {}
     for role in custom.roles:
-        if role.key not in roles or role.use != "kategorik":
+        if role.key not in roles or role.use != "kategorik" or role.separate:
             continue
         column = roles[role.key]
         K.check_levels(data[column], labels[column], *role.levels)
@@ -364,8 +504,13 @@ def custom_case(custom: CustomLab, table, choices: CustomChoices) -> tuple[Case,
             pick = choices.picks.get(role.key)
             levels[role.key] = pick if pick in orders[column] else default_pick(orders[column])
     extra: dict[str, object] = {"order_text": ORDER_TEXT[choices.order]}
+    if separate:
+        extra["separate"] = separate
     if custom.type_choices is not None:
         extra["types"] = _types(custom, table, choices, selections, roles)
+    if custom.settings:
+        extra["settings"] = {setting.key: setting_value(setting, data, roles, choices.settings.get(setting.key))
+                             for setting in custom.settings}
     case = Case(
         source="kendi",
         load=(prepared.read,),

@@ -64,6 +64,7 @@ from core.labs.spec import (
     ReadFile,
     CompleteCases,
     Rectangles,
+    ReplaceMax,
     RowSum,
     Scalar,
     ScalarTable,
@@ -80,7 +81,7 @@ from core.labs.spec import (
     TreeDiagram,
     VariableTypes,
 )
-from core.labs.tables import class_edges
+from core.labs.tables import class_edges, decimal_places, stem_unit_note, stem_unit_text
 
 _STAT = {
     "count": "count()", "sum": "sum()", "mean": "mean()", "median": "median()", "mode": "mode().item()",
@@ -262,6 +263,14 @@ def _where(frame: str, where) -> str:
     return f'{frame}["{column}"] == {text(value)}'
 
 
+def _class_places(op: ClassTable) -> int:
+    """Sınıf tablosunun yazdırma basamağı: en az 3; sınırlar ve orta noktalar (genişliğin bir basamak fazlası)
+    yuvarlanıp kaybolmaz (ör. h = 0,0002)."""
+
+    lower = decimal_places(op.lower) if op.lower is not None else 0
+    return max(3, decimal_places(op.width) + 1, lower)
+
+
 class PythonGenerator(Generator):
     language = "Python"
     comment = "#"
@@ -331,8 +340,10 @@ class PythonGenerator(Generator):
         elif with_checks:
             lines += [
                 "def kontrol_et(etiket, deger, beklenen, ondalik=4):",
-                '    """Hesaplanan değeri uygulamanın aynı veriyle verdiği değerle karşılaştırır."""',
-                "    tolerans = 0.5 * 10 ** (-ondalik) + 1e-12",
+                '    """Hesaplanan değeri uygulamanın aynı veriyle verdiği değerle karşılaştırır. Çok büyük değerlerde',
+                "    toplamların son basamakları dilden dile değişebilir; değerler en az on iki anlamlı basamakta",
+                '    uyuşmalıdır."""',
+                "    tolerans = max(0.5 * 10 ** (-ondalik), 1e-12 * abs(beklenen)) + 1e-12",
                 '    durum = "OK  " if abs(deger - beklenen) <= tolerans else "HATA"',
                 '    print(f"  {durum} {etiket}: {deger:.{ondalik}f}  (uygulama: {beklenen:.{ondalik}f})")',
                 '    assert abs(deger - beklenen) <= tolerans, f"{etiket} uygulamayla uyuşmuyor."',
@@ -410,6 +421,15 @@ class PythonGenerator(Generator):
         if isinstance(op, Derive):
             rhs = _render(op.expr, self.dialect(op.frame))
             return [f"# {op.comment}", f'{op.frame}["{op.name}"] = {rhs}']
+        if isinstance(op, ReplaceMax):
+            column = f'{op.frame}["{op.variable}"]'
+            return [
+                f"# {op.comment}",
+                f"{op.frame} = {op.source}.copy()",
+                f"{column} = {column}.astype(float)",
+                f'{op.frame}.loc[{column}.idxmax(), "{op.variable}"] = {_parameter(op.value)}'
+                "  # en büyük gözlemin yerine",
+            ]
         if isinstance(op, NewSample):
             frame = f'{op.frame} = pd.DataFrame({{"id": np.arange(1, {op.nobs} + 1)}})'
             if op.seed is None:
@@ -486,7 +506,10 @@ class PythonGenerator(Generator):
             lines = [f'{op.result} = {op.frame}.groupby("{op.by}").agg(']
             for name, variable, stat in op.columns:
                 lines.append(f'    {name}=("{variable}", "{stat}"),')
-            lines += [f").reindex({_list(op.order)})", f"print({op.result}.round(4))"]
+            if op.as_frame:  # her satır bir grup; grup adları da bir sütun
+                lines += [f").reindex({_list(op.order)}).reset_index()", f"print({op.result}.round(4))"]
+            else:
+                lines += [f").reindex({_list(op.order)})", f"print({op.result}.round(4))"]
             return lines
         if isinstance(op, FrequencyTable):
             return self._frequency(op)
@@ -866,13 +889,35 @@ class PythonGenerator(Generator):
         if op.totals:
             summed = [column for column in ("frekans", "goreli", "yuzde") if column in op.columns]
             lines.append(f'{r}.loc["{TOTAL}"] = {r}[{_list(summed)}].sum()  # alt ve üst sınır toplanmaz')
-        return lines + [f"print({r}.round(3))"]
+        places = _class_places(op)
+        if self.spec.source == "notlar":
+            return lines + [f"print({r}.round({places}))"]
+        return lines + [  # çok büyük ya da çok küçük sınırlar üstel gösterimle yazılmasın
+            f'print({r}.round({places}).to_string(float_format=lambda deger: f"{{deger:.{places}f}}"'
+            '.rstrip("0").rstrip(".")))',
+        ]
 
     def _stem_leaf(self, op: StemLeaf) -> list[str]:
         r = op.result
-        return [
-            f'sirali = {op.frame}["{op.variable}"].sort_values().astype(int)',
-            "govde, yaprak = sirali // 10, sirali % 10  # gövde: onlar basamağı, yaprak: birler basamağı",
+        if op.decimals or op.unit:
+            lines = [f"# Yaprak birimi {stem_unit_text(op.unit)}: {stem_unit_note(op.unit)}",
+                     f'sirali = {op.frame}["{op.variable}"].sort_values()']
+            if op.decimals:
+                lines.append(f"sirali = (sirali * {10 ** op.decimals}).round()  # {op.decimals} ondalık basamak: "
+                             "tam sayıya")
+            if op.decimals + op.unit:
+                lines.append(f"sirali = sirali // {10 ** (op.decimals + op.unit)}  # yaprak biriminden küçük "
+                             "basamaklar atılır")
+            lines += [
+                "sirali = sirali.astype(int)",
+                "govde, yaprak = sirali // 10, sirali % 10  # yaprak: son basamak, gövde: öncekiler",
+            ]
+        else:
+            lines = [
+                f'sirali = {op.frame}["{op.variable}"].sort_values().astype(int)',
+                "govde, yaprak = sirali // 10, sirali % 10  # gövde: onlar basamağı, yaprak: birler basamağı",
+            ]
+        return lines + [
             "govdeler = range(govde.min(), govde.max() + 1)",
             f"{r} = pd.DataFrame({{",
             '    "yapraklar": [" ".join(str(v) for v in yaprak[govde == g]) for g in govdeler],',

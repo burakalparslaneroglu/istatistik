@@ -96,7 +96,7 @@ def test_topic_switch_keeps_text_scale_and_code_language() -> None:
 def test_lab_source_selector_offers_the_alternative_example() -> None:
     app = _run_app()
     assert app.segmented_control(key="konu01_lab_kaynak").value == "notlar"
-    for topic, steps in (("konu01", 5), ("konu02", 12)):
+    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
         assert "Kurgusal veri" in _markdown(app)
@@ -106,8 +106,8 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
                 app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
                 assert not app.exception, (topic, language, number)
                 assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
-    app.radio(key="selected_topic").set_value("konu03").run()
-    assert not any(widget.key == "konu03_lab_kaynak" for widget in app.segmented_control)
+    app.radio(key="selected_topic").set_value("konu05").run()
+    assert not any(widget.key == "konu05_lab_kaynak" for widget in app.segmented_control)
 
 
 def test_own_data_upload_runs_every_step() -> None:
@@ -119,8 +119,10 @@ def test_own_data_upload_runs_every_step() -> None:
     roles = {
         "konu01": {"sayisal": "Günlük ciro (bin TL)", "kimlik": "Kafe", "ikili": "Hedef durumu"},
         "konu02": {"satir": "Şube", "secenek": "Şube", "altgrup": "Sipariş türü", "sonuc": "Memnuniyet"},
+        "konu03": {"sayisal": "Memnuniyet puanı"},
+        "konu04": {"grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"},
     }
-    for topic, steps in (("konu01", 5), ("konu02", 12)):
+    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
         assert any("dosya yükleyin" in item.value for item in app.info)
@@ -134,6 +136,88 @@ def test_own_data_upload_runs_every_step() -> None:
             assert not app.exception, (topic, number)
             assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
             assert not any("sütun seçin" in item.value for item in app.markdown), (topic, number)
+
+
+def test_class_count_slider_changes_the_konu03_classes() -> None:
+    from core.labs import kendi_veri as K
+    from core.labs.ornekler import VARIANTS
+
+    app = _run_app()
+    topic, mime = "konu03", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    app.radio(key="selected_topic").set_value(topic).run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key=f"{topic}_kendi_dosya").upload("anket.xlsx", K.sample_excel(VARIANTS[topic].custom.sample()),
+                                                         mime).run()
+    slider = next(widget for widget in app.slider if str(widget.key).startswith(f"{topic}_kendi_ayar_k_"))
+    assert slider.value == 7  # ⌈1 + log₂ 50⌉
+    app.segmented_control(key=f"{topic}_lab_step").set_value(2).run()
+    assert "/7" in _markdown(app)
+    slider.set_value(15).run()
+    assert not app.exception and "/15" in _markdown(app)
+    app.segmented_control(key=f"{topic}_lab_step").set_value(3).run()
+    assert not app.exception
+
+
+def _class_slider(app: AppTest):
+    return next(widget for widget in app.slider if str(widget.key).startswith("konu03_kendi_ayar_k_"))
+
+
+def test_class_count_error_appears_under_the_slider() -> None:
+    """Sınıf sınırları önerilen k ile yazılamıyorsa kaydırıcı yine çizilir ve hata altında görünür; k değişince
+    uygulama açılır."""
+
+    app = _run_app()
+    app.radio(key="selected_topic").set_value("konu03").run()
+    app.segmented_control(key="konu03_lab_kaynak").set_value("kendi").run()
+    data = ("x\n" + "\n".join(str(value) for value in (0, 10 ** 9, 2 * 10 ** 9, 3 * 10 ** 9, 4 * 10 ** 9, 5 * 10 ** 9,
+                                                        6 * 10 ** 9, 7 * 10 ** 9, 8 * 10 ** 9, 89 * 10 ** 8)) + "\n")
+    app.file_uploader(key="konu03_kendi_dosya").upload("buyuk.csv", data.encode("utf-8"), "text/csv").run()
+    assert not app.exception and _class_slider(app).value == 5
+    assert any("sınıf sayılarından birini seçin: 18, 19 ve 20" in item.value for item in app.error)
+    _class_slider(app).set_value(18).run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    assert any(item.value.startswith("Adım 1:") for item in app.subheader)
+
+
+def test_class_count_follows_the_excel_sheet() -> None:
+    import io
+
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(2)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame({"Puan": rng.integers(20, 99, 10)}).to_excel(writer, sheet_name="Az", index=False)
+        pd.DataFrame({"Puan": rng.integers(20, 99, 300)}).to_excel(writer, sheet_name="Çok", index=False)
+    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    app = _run_app()
+    app.radio(key="selected_topic").set_value("konu03").run()
+    app.segmented_control(key="konu03_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key="konu03_kendi_dosya").upload("iki_sayfa.xlsx", buffer.getvalue(), mime).run()
+    assert _class_slider(app).value == 5  # ⌈1 + log₂ 10⌉
+    _class_slider(app).set_value(6).run()
+    app.selectbox(key="konu03_kendi_sayfa").set_value("Çok").run()
+    assert not app.exception and _class_slider(app).value == 10  # ⌈1 + log₂ 300⌉; önceki sayfanın seçimi taşınmaz
+    app.selectbox(key="konu03_kendi_sayfa").set_value("Az").run()
+    assert _class_slider(app).value == 6
+
+
+def test_class_count_follows_the_column_even_when_code_names_coincide() -> None:
+    """"Puan (1)" ve "Puan 1" kodda aynı adı alır (puan_1); kaydırıcı yine de dosyadaki sütuna bağlıdır."""
+
+    rows = ["Puan (1),Puan 1"] + [f"{40 + index % 50},{30 + index % 60}" if index < 10 else f",{30 + index % 60}"
+                                  for index in range(300)]
+    app = _run_app()
+    app.radio(key="selected_topic").set_value("konu03").run()
+    app.segmented_control(key="konu03_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key="konu03_kendi_dosya").upload("puan.csv", ("\n".join(rows) + "\n").encode("utf-8"),
+                                                       "text/csv").run()
+    app.selectbox(key="konu03_kendi_rol_sayisal").set_value("Puan (1)").run()
+    assert _class_slider(app).value == 5  # n = 10
+    _class_slider(app).set_value(6).run()
+    app.selectbox(key="konu03_kendi_rol_sayisal").set_value("Puan 1").run()
+    assert not app.exception and _class_slider(app).value == 10  # n = 300
 
 
 def test_own_data_survives_a_source_switch_and_follows_the_file_name() -> None:

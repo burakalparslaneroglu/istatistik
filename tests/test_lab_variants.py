@@ -1,9 +1,9 @@
-"""Uygulama sekmesinin ek veri kaynakları: alternatif örnek ve kendi verin (``core.labs.ornekler``).
+"""Uygulama sekmesinin ek veri kaynakları: alternatif örnek ve kendi verini yükle (``core.labs.ornekler``).
 
 Kayıttaki her konu kendiliğinden kapsanır: alternatif örneğin adımları notlarla aynı numaralıdır ve aynı bölümlere
 bağlıdır;
-uygulama, üretilen Python ve R kodu aynı sayıları verir. Kendi verin seçeneğinde örnek dosya yüklenince alternatif
-örneğin sayıları elde edilir; dosya okuma ve temizleme kuralları iki dilde aynıdır.
+uygulama, üretilen Python ve R kodu aynı sayıları verir. "Kendi verini yükle" seçeneğinde örnek dosya yüklenince
+alternatif örneğin sayıları elde edilir; dosya okuma ve temizleme kuralları iki dilde aynıdır.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,8 @@ SAMPLE_ROLES = {
                ("İlçe", "Personel sayısı"), {"ikili": "Tuttu"}),
     "konu02": ({"ana": "Ödeme yöntemi", "satir": "Şube", "secenek": "Şube", "altgrup": "Sipariş türü",
                 "sonuc": "Memnuniyet"}, (), {"sonuc": "Memnun"}),
+    "konu03": ({"sayisal": "Memnuniyet puanı"}, (), {}),
+    "konu04": ({"sayisal": "Aylık kira (bin TL)", "grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"}, (), {}),
 }
 
 
@@ -130,7 +133,7 @@ def test_notes_scripts_keep_their_wording_and_names() -> None:
         assert script_filename(spec, "R") == f"ikt217_{topic}_uygulama.R"
 
 
-# --- Kendi verin: örnek dosya ---------------------------------------------------------
+# --- Kendi verini yükle: örnek dosya -------------------------------------------------
 
 @pytest.mark.parametrize("topic", TOPICS)
 def test_uploading_the_sample_file_gives_the_alternative_numbers(topic: str) -> None:
@@ -499,7 +502,7 @@ def test_unusual_category_characters_sort_without_errors() -> None:
     assert set(order) == set(values) and order.index("2") < order.index("10")
 
 
-# --- Kendi verin: boş hücreler ----------------------------------------------------------
+# --- Kendi verini yükle: boş hücreler --------------------------------------------------
 
 def _orders_with_blanks() -> pd.DataFrame:
     rng = np.random.default_rng(7)
@@ -578,3 +581,78 @@ def test_turkish_order_and_frequency_order() -> None:
         "2. sınıf", "10. sınıf", "Ayran", "Çay", "ılık", "İçecek", "Su", "Şalgam")
     assert K.category_order(values, "frekans")[:2] == ("Çay", "Su")
     assert K.category_order(values, "dosya")[:3] == ("Çay", "Su", "Ayran")
+
+
+# --- Konu 3–4: zor veri setleri iki dilde -------------------------------------------------------
+
+def _plain_csv(frame: pd.DataFrame, separator: str, decimal: str) -> bytes:
+    """Sayılar üstel gösterim olmadan, seçilen ondalık işaretiyle (0.000012; 999000000000001); boş hücre boş."""
+
+    def cell(value) -> str:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return ""
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            text = format(Decimal(repr(float(value))).normalize(), "f")
+            return text.replace(".", decimal)
+        return str(value)
+
+    lines = [separator.join(frame.columns)]
+    lines += [separator.join(cell(value) for value in row) for row in frame.itertuples(index=False)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+HARD_DATA = {
+    "konu03-not-ortalamasi": ("konu03", pd.DataFrame({"Not": [2.37, 2.15, 3.98, 1.85, 3.02, 2.66, 3.41, 2.95, 3.5,
+                                                               2.2, 1.9, 3.75, 2.05, 3.33]}),
+                              {"sayisal": "Not"}, {"k": 6}, ";", ","),
+    "konu03-satis-yaprak-10": ("konu03", pd.DataFrame({"Satış": [1565, 1852, 1644, 1766, 1888, 1912, 2044, 1812,
+                                                                 1790, 1679, 2008, 1852, 1967, 1954, 1733]}),
+                               {"sayisal": "Satış"}, {}, ",", "."),
+    "konu03-negatif": ("konu03", pd.DataFrame({"Büyüme": [-3.5, -1.2, 0.4, 2.8, 1.1, -0.6, 3.9, 2.2, -2.7, 0.9]}),
+                       {"sayisal": "Büyüme"}, {}, "\t", ","),
+    "konu03-dar-genislik": ("konu03", pd.DataFrame({"Oran": [round(0.0001 * index, 4) for index in range(1, 13)]}),
+                            {"sayisal": "Oran"}, {}, ",", "."),
+    "konu04-bos-grup-buyume": ("konu04", pd.DataFrame({
+        "Kira": [20.5, -3, 22, 30, None, 28, 26.25, None, 19, 24],
+        "Bölge": ["Merkez", "Sahil", None, "Merkez", "Sahil", "Sahil", "Merkez", "Sahil", None, "Merkez"],
+        "Artış (%)": [45, 30.5, 18, -12, 9, None, None, None, None, None],
+    }), {"sayisal": "Kira", "grup": "Bölge", "buyume": "Artış (%)"}, {}, ";", ","),
+    "konu04-cok-buyuk": ("konu04", pd.DataFrame({"x": [999000000000000 + step * 1000003 for step in (0, 4, 1, 9, 6)]}),
+                         {"sayisal": "x"}, {}, ",", "."),
+    "konu04-cok-kucuk": ("konu04", pd.DataFrame({"x": [0.000012, 0.000034, 0.000021, 0.000045, 0.000018]}),
+                         {"sayisal": "x"}, {}, ",", "."),
+    "konu04-buyuk-cift-n": ("konu04", pd.DataFrame({"Süre": np.round(np.random.default_rng(8).gamma(2, 9, 320), 1)}),
+                            {"sayisal": "Süre"}, {}, ",", "."),
+}
+
+
+@pytest.mark.parametrize("name", sorted(HARD_DATA))
+def test_hard_own_data_is_reproduced_in_both_languages(name: str, tmp_path: Path) -> None:
+    """Kendi verisi (CSV): ondalıklı sınıf sınırları, yaprak birimi 10, negatif değerler, çok dar sınıflar, boş grup
+    hücreleri, ayrı okunan yüzde değişim sütunu, çok büyük ve çok küçük değerler; Python ve R aynı sayıları verir."""
+
+    topic, frame, roles, settings, separator, decimal = HARD_DATA[name]
+    data = _plain_csv(frame, separator, decimal)
+    table = K.read_upload("zor.csv", data)
+    custom = VARIANTS[topic].custom
+    case, _ = custom_case(custom, table, CustomChoices(roles=roles, settings=settings))
+    spec = custom.build(case)
+    assert run_lab(spec).all_passed
+    _reproduce(spec, tmp_path, ("zor.csv", data), _languages())
+
+
+def test_numbers_with_more_than_fifteen_significant_digits_are_rejected() -> None:
+    """pandas ve R 16–17 basamaklı sayıları (ör. 0,1 + 0,2 = 0,30000000000000004) son basamakta farklı okuyabilir;
+    eşitliğe dayanan sayımlar (mod, sınıf frekansı) iki dilde ayrışırdı. Sayısal rolde açık bir iletiyle reddedilir."""
+
+    data = "x;y\n0,30000000000000004;1\n0,5;2\n0,7;3\n0,9;4\n1,1;5\n".encode("utf-8")
+    table = K.read_upload("uzun.csv", data)
+    assert table.long_numbers == {"x": ("0,30000000000000004",)}
+    custom = VARIANTS["konu04"].custom
+    with pytest.raises(K.UploadError, match="15'ten fazla anlamlı basamaklı"):
+        custom_case(custom, table, CustomChoices(roles={"sayisal": "x"}))
+    case, _ = custom_case(custom, table, CustomChoices(roles={"sayisal": "y"}))
+    assert len(case.data) == 5
+    with pytest.raises(K.UploadError, match="15'ten fazla anlamlı basamaklı"):
+        K.series_kind(pd.Series(["0,30000000000000004", "0,5"]), "sayisal", "x", ",")
+    assert K.significant_digits("1234567.0025") == 11 and K.significant_digits("0,000012") == 2

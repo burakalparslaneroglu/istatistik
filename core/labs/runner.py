@@ -60,6 +60,7 @@ from core.labs.spec import (
     ReadFile,
     CompleteCases,
     Rectangles,
+    ReplaceMax,
     RowSum,
     Scalar,
     ScalarTable,
@@ -253,6 +254,12 @@ def execute(op: Operation, state: LabState) -> None:
     elif isinstance(op, Derive):
         frame = state.frames[op.frame]
         frame[op.name] = E.evaluate(op.expr, frame, scalar=_scalar(state))
+    elif isinstance(op, ReplaceMax):
+        frame = state.frames[op.source].copy()
+        values = frame[op.variable].to_numpy(dtype=float).copy()
+        values[int(np.argmax(values))] = parameter(op.value, state)  # en büyük değerin ilk görüldüğü satır
+        frame[op.variable] = values
+        state.frames[op.frame] = frame
     elif isinstance(op, NewSample):
         state.frames[op.frame] = pd.DataFrame({"id": np.arange(1, op.nobs + 1)})
         if op.seed is not None:
@@ -315,6 +322,8 @@ def execute(op: Operation, state: LabState) -> None:
         grouped = state.frames[op.frame].groupby(op.by)
         table = pd.DataFrame({name: grouped[variable].agg(stat) for name, variable, stat in op.columns})
         state.tables[op.result] = table.reindex(list(op.order))
+        if op.as_frame:
+            state.frames[op.result] = state.tables[op.result].rename_axis(op.by).reset_index()
     elif isinstance(op, FrequencyTable):
         values = state.frames[op.frame][op.variable]
         state.tables[op.result] = T.frequency_table(values, op.order, relative=op.relative, totals=op.totals)
@@ -340,7 +349,7 @@ def execute(op: Operation, state: LabState) -> None:
         state.tables[op.result] = T.class_table(values, edges, op.columns, totals=op.totals,
                                                 row_labels=op.row_labels)
     elif isinstance(op, StemLeaf):
-        state.tables[op.result] = T.stem_leaf(state.frames[op.frame][op.variable])
+        state.tables[op.result] = T.stem_leaf(state.frames[op.frame][op.variable], op.decimals, op.unit)
     elif isinstance(op, Percentile):
         values = state.frames[op.frame][op.variable]
         state.scalars[op.name] = T.percentile(values, op.p, op.method)

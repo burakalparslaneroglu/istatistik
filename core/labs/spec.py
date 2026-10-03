@@ -313,6 +313,19 @@ class Derive:
     comment: str
 
 
+@dataclass(frozen=True)
+class ReplaceMax:
+    """``source`` çerçevesinin kopyası ``frame``: ``variable`` sütunundaki en büyük gözlemin (ilk görüldüğü satır)
+    yerine ``value`` yazılır; diğer gözlemler değişmez (ör. tek bir uç değerin ortalamaya etkisi). ``value`` bir sayı
+    ya da önceden hesaplanmış bir skalerin adıdır."""
+
+    frame: str
+    source: str
+    variable: str
+    value: "Parameter"
+    comment: str
+
+
 # --- Simülasyon ------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -465,7 +478,8 @@ class ScalarTable:
 class GroupSummary:
     """Bir değişkenin gruplarına göre özet: (sütun adı, değişken, istatistik). Gruplar ``order`` sırasıyla; grup
     değerleri sayı da olabilir (ör. başarı sayısı x = 0, 1, …). ``decimals``: ekranda gösterim basamağı (``count``
-    sütunları tam sayı)."""
+    sütunları tam sayı). ``as_frame``: özet aynı adla bir veri çerçevesi de olur (her satır bir grup, ilk sütun ``by``);
+    ardından ``Derive`` ve ``Statistic`` grupların üzerinde çalışır (ör. grup paylarıyla ağırlıklı ortalama)."""
 
     frame: str
     by: str
@@ -473,6 +487,7 @@ class GroupSummary:
     result: str
     order: tuple[object, ...]
     decimals: int = 3
+    as_frame: bool = False
 
 
 @dataclass(frozen=True)
@@ -571,11 +586,18 @@ class StemLeaf:
 
     Sonuç tablosunun satırları gövdelerdir (en küçükten en büyüğe, boş gövdeler dahil); sütunlar
     ``yapraklar`` (küçükten büyüğe, boşlukla ayrılmış) ve ``yaprak_sayisi``.
+
+    ``unit``: yaprak birimi 10^unit (ör. 1 ise yaprak onlar basamağı, −1 ise ilk ondalık basamak); değerin yaprak
+    biriminden küçük basamakları atılır (kesilir), yuvarlanmaz. ``decimals``: verideki ondalık basamak sayısı d;
+    değerler önce 10^d ile çarpılıp tam sayıya yuvarlanır (2,15 → 215), böylece kesme iki dilde aynı tam sayılarla
+    yapılır. ``unit`` en az −``decimals`` olmalıdır. İkisi de 0 ise notlardaki gösterimdir.
     """
 
     frame: str
     variable: str
     result: str
+    decimals: int = 0
+    unit: int = 0
 
 
 @dataclass(frozen=True)
@@ -741,6 +763,8 @@ class Histogram:
     curves: tuple[tuple[str, "Parameter", "Parameter", str], ...] = ()
     """(dağılım, birinci, ikinci parametre, etiket): beklenen sayı eğrileri. Kutudaki beklenen sayı, ilk serinin gözlem
     sayısı × kutu genişliği × f(x)'tir; histogramın yüksekliğiyle aynı ölçektedir (``DENSITIES``)."""
+    hover_unit: str = "tekrar"
+    """Grafiğin üzerine gelince kutudaki sayının birimi (ör. bir veri setinin histogramında "gözlem")."""
 
 
 @dataclass(frozen=True)
@@ -922,6 +946,7 @@ Operation = Union[
     Rectangles,
     RowSum,
     Derive,
+    ReplaceMax,
     NewSample,
     Draw,
     DrawCount,

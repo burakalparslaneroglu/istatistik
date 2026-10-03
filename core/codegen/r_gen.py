@@ -62,6 +62,7 @@ from core.labs.spec import (
     ReadFile,
     CompleteCases,
     Rectangles,
+    ReplaceMax,
     RowSum,
     Scalar,
     ScalarTable,
@@ -78,7 +79,7 @@ from core.labs.spec import (
     TreeDiagram,
     VariableTypes,
 )
-from core.labs.tables import class_edges
+from core.labs.tables import class_edges, decimal_places, stem_unit_note, stem_unit_text
 
 _STAT = {"sum": "sum", "mean": "mean", "median": "median", "prod": "prod", "min": "min", "max": "max",
          "var": "var", "std": "sd", "count": "length"}
@@ -250,6 +251,14 @@ def _statistic(values: str, stat: str) -> str:
     return f"{_STAT[stat]}({values})"
 
 
+def _class_places(op: ClassTable) -> int:
+    """Sınıf tablosunun yazdırma basamağı: en az 3; sınırlar ve orta noktalar (genişliğin bir basamak fazlası)
+    yuvarlanıp kaybolmaz (ör. h = 0,0002)."""
+
+    lower = decimal_places(op.lower) if op.lower is not None else 0
+    return max(3, decimal_places(op.width) + 1, lower)
+
+
 class RGenerator(Generator):
     language = "R"
     comment = "#"
@@ -303,9 +312,11 @@ class RGenerator(Generator):
             lines += _CLEAN_TEXT + [""]
         if with_checks and self.spec.source != "notlar":
             lines += [
-                "# Hesaplanan değeri uygulamanın aynı veriyle verdiği değerle karşılaştırır",
+                "# Hesaplanan değeri uygulamanın aynı veriyle verdiği değerle karşılaştırır. Çok büyük değerlerde",
+                "# toplamların son basamakları dilden dile değişebilir; değerler en az on iki anlamlı basamakta",
+                "# uyuşmalıdır.",
                 "kontrol_et <- function(etiket, deger, beklenen, ondalik = 4) {",
-                "  tolerans <- 0.5 * 10^(-ondalik) + 1e-12",
+                "  tolerans <- max(0.5 * 10^(-ondalik), 1e-12 * abs(beklenen)) + 1e-12",
                 '  durum <- if (abs(deger - beklenen) <= tolerans) "OK  " else "HATA"',
                 '  cat(sprintf("  %s %s: %.*f  (uygulama: %s)\\n", durum, etiket, ondalik, deger,',
                 '              sprintf("%.*f", ondalik, beklenen)))',
@@ -371,6 +382,14 @@ class RGenerator(Generator):
             ]
         if isinstance(op, Derive):
             return [f"# {op.comment}", f"{op.frame}${op.name} <- {_r(op.expr, self.dialect(op.frame))}"]
+        if isinstance(op, ReplaceMax):
+            column = f"{op.frame}${op.variable}"
+            value = op.value if isinstance(op.value, str) else E.format_number(op.value)
+            return [
+                f"# {op.comment}",
+                f"{op.frame} <- {op.source}",
+                f"{column}[which.max({column})] <- {value}  # en büyük gözlemin yerine",
+            ]
         if isinstance(op, Support):
             lower, upper = E.format_number(op.lower), E.format_number(op.upper)
             return [f"# {op.comment}", f"{op.frame} <- data.frame({op.name} = {lower}:{upper})"]
@@ -779,6 +798,13 @@ class RGenerator(Generator):
     def _group_summary(self, op: GroupSummary) -> list[str]:
         # tapply sonucunun adları metindir; sayısal grup değerleri (0, 1, …) konumla değil adla seçilsin
         order = _vector(tuple(value if isinstance(value, str) else E.format_number(float(value)) for value in op.order))
+        if op.as_frame:  # her satır bir grup; grup adları da bir sütun
+            lines = [f"{op.result} <- data.frame(", f"  {op.by} = {_vector(op.order)},"]
+            for index, (name, variable, stat) in enumerate(op.columns):
+                ending = "," if index < len(op.columns) - 1 else ""
+                call = f"tapply({op.frame}${variable}, {op.frame}${op.by}, {_STAT[stat]})[{order}]"
+                lines.append(f"  {name} = as.vector({call}){ending}")
+            return lines + [")", f"print({op.result})"]
         lines = [f"{op.result} <- data.frame("]
         for index, (name, variable, stat) in enumerate(op.columns):
             ending = "," if index < len(op.columns) - 1 else ""
@@ -903,16 +929,36 @@ class RGenerator(Generator):
                 f'{r}["{TOTAL}", ] <- NA  # alt ve üst sınır toplanmaz',
                 f'{r}["{TOTAL}", names(toplamlar)] <- toplamlar',
             ]
-        return lines + [f"print(round({r}, 3))"]
+        places = _class_places(op)
+        if self.spec.source == "notlar":
+            return lines + [f"print(round({r}, {places}))"]
+        # çok büyük ya da çok küçük sınırlar üstel gösterimle ya da 7 anlamlı basamağa kesilerek yazılmasın
+        return lines + [f"print(format(round({r}, {places}), digits = 15, scientific = FALSE, drop0trailing = TRUE))"]
 
     def _stem_leaf(self, op: StemLeaf) -> list[str]:
         r = op.result
-        return [
-            "# R'nin stem() fonksiyonu gövde ölçeğini kendisi seçer; notlardaki gösterimle aynı olsun diye",
-            "# gövde (onlar basamağı) ve yaprak (birler basamağı) açıkça ayrılır.",
-            f"sirali <- sort({op.frame}${op.variable})",
-            "govde <- sirali %/% 10",
-            "yaprak <- sirali %% 10",
+        if op.decimals or op.unit:
+            lines = [
+                "# R'nin stem() fonksiyonu gövde ölçeğini kendisi seçer ve yuvarlar; burada gövde ve yaprak açıkça",
+                f"# ayrılır. Yaprak birimi {stem_unit_text(op.unit)}: {stem_unit_note(op.unit)}",
+                f"sirali <- sort({op.frame}${op.variable})",
+            ]
+            if op.decimals:
+                lines.append(f"sirali <- round(sirali * {10 ** op.decimals})  # {op.decimals} ondalık basamak: "
+                             "tam sayıya")
+            if op.decimals + op.unit:
+                lines.append(f"sirali <- sirali %/% {10 ** (op.decimals + op.unit)}  # yaprak biriminden küçük "
+                             "basamaklar atılır")
+            lines += ["govde <- sirali %/% 10", "yaprak <- sirali %% 10"]
+        else:
+            lines = [
+                "# R'nin stem() fonksiyonu gövde ölçeğini kendisi seçer; notlardaki gösterimle aynı olsun diye",
+                "# gövde (onlar basamağı) ve yaprak (birler basamağı) açıkça ayrılır.",
+                f"sirali <- sort({op.frame}${op.variable})",
+                "govde <- sirali %/% 10",
+                "yaprak <- sirali %% 10",
+            ]
+        return lines + [
             "govdeler <- seq(min(govde), max(govde))",
             f"{r} <- data.frame(",
             '  yapraklar = sapply(govdeler, function(g) paste(yaprak[govde == g], collapse = " ")),',

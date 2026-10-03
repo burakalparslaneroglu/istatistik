@@ -1,4 +1,4 @@
-"""Uygulama sekmesinde "Kendi verin" paneli: dosya yükleme, sütun seçimi ve doğrulama.
+"""Uygulama sekmesinde "Kendi verini yükle" paneli: dosya yükleme, sütun seçimi ve doğrulama.
 
 Hesap ``core.labs.kendi_veri`` ve ``core.labs.ornek`` içindedir; bu modül yalnız seçimleri toplar. Yüklenen dosya ve
 ondan kurulan uygulama yalnız bu oturumun belleğinde (``st.session_state``) tutulur; ortak önbelleğe yazılmaz.
@@ -96,7 +96,7 @@ def _forget_choices(topic_key: str) -> None:
     """Yeni dosya yüklenince önceki dosyanın sütun seçimleri silinir."""
 
     prefix = f"{topic_key}_kendi_"
-    names = ("rol_", "secim_", "ek", "sira", "sayfa", "turler", "tur_secimleri")
+    names = ("rol_", "secim_", "ek", "sira", "sayfa", "turler", "tur_secimleri", "ayar_")
     for key in list(st.session_state.keys()):
         text = str(key)
         bare = text[len("_kalici_"):] if text.startswith("_kalici_") else text
@@ -194,6 +194,26 @@ def _render_picks(topic_key: str, custom: CustomLab, case) -> dict[str, str]:
         picks[role.key] = st.selectbox(f"{role.pick} · {md(case.labels[case.roles[role.key]])}", categories, key=key)
         _remember(key)
     return picks
+
+
+def _render_settings(topic_key: str, custom: CustomLab, case, scope: object) -> dict[str, int]:
+    """Tam sayı ayarları (ör. sınıf sayısı) kaydırıcıyla seçilir; başlangıç değeri veriden önerilen değerdir. Veri
+    değişince (dosya, Excel sayfası ya da rollerin dosyadaki sütunları; hepsi ``scope`` içinde) öneri yeniden
+    hesaplanır."""
+
+    values: dict[str, int] = {}
+    digest = hashlib.md5(repr(scope).encode("utf-8")).hexdigest()[:12]
+    for setting in custom.settings:
+        key = f"{topic_key}_kendi_ayar_{setting.key}_{digest}"
+        _restore(key)
+        stored = st.session_state.get(key)
+        if not isinstance(stored, int) or not setting.minimum <= stored <= setting.maximum:
+            st.session_state[key] = int(case.extra["settings"][setting.key])
+        steps = ", ".join(str(step) for step in setting.steps)
+        values[setting.key] = int(st.slider(setting.label, setting.minimum, setting.maximum, key=key,
+                                            help=f"{setting.help} Adım: {steps}." if steps else setting.help))
+        _remember(key)
+    return values
 
 
 def _render_types(topic_key: str, custom: CustomLab, case, table: K.UploadedTable) -> dict[str, str]:
@@ -299,11 +319,14 @@ def render_custom(topic_key: str, custom: CustomLab) -> LabSpec | None:
             case, notes = custom_case(custom, table, choices)
             picks = _render_picks(topic_key, custom, case)
             types = _render_types(topic_key, custom, case, table) if custom.type_choices else {}
-            if picks or types:
-                choices = replace(choices, picks=picks, types=types)
+            scope = (token, sheet, tuple(sorted(choices.roles.items(), key=str)))
+            settings = _render_settings(topic_key, custom, case, scope) if custom.settings else {}
+            if picks or types or settings:
+                choices = replace(choices, picks=picks, types=types, settings=settings)
                 case, notes = custom_case(custom, table, choices)
             key = (token, sheet, tuple(sorted(choices.roles.items(), key=str)), choices.extra, choices.order,
-                   tuple(sorted(choices.picks.items())), tuple(sorted(choices.types.items())))
+                   tuple(sorted(choices.picks.items())), tuple(sorted(choices.types.items())),
+                   tuple(sorted(choices.settings.items())))
             spec = _session(f"{topic_key}_kendi_uygulama", key, lambda: custom.build(case))
         except K.UploadError as error:
             st.error(md(str(error)), icon=":material/error:")

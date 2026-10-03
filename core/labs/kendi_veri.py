@@ -53,6 +53,9 @@ _R_RESERVED = {
 _ASCII = str.maketrans("çğıöşüÇĞİÖŞÜâîûÂÎÛ", "cgiosuCGIOSUaiuAIU")
 _ALPHABET = "abcçdefgğhıijklmnoöprsştuüvyz"
 _NUMBER_TEXT = re.compile(r"[+-]?[0-9]+(?:[.,][0-9]+)?")
+_LONG_NUMBER = re.compile(r"\s*[+-]?([0-9]+)(?:[.,]([0-9]+))?(?:[eE][+-]?[0-9]+)?\s*")
+MAX_SIGNIFICANT = 15
+"""Sayı hücresinde en çok anlamlı basamak: daha uzun sayıları pandas ile R son basamakta farklı okuyabilir."""
 _GROUPED_NUMBER = re.compile(r"[+-]?[0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]+)?")
 _DOT_DECIMAL = re.compile(r"^\s*[+-]?[0-9]+\.[0-9]+\s*$", re.MULTILINE)
 _COMMA_DECIMAL = re.compile(r"^\s*[+-]?[0-9]+,[0-9]+\s*$", re.MULTILINE)
@@ -138,6 +141,9 @@ class UploadedTable:
     encoding: str = "utf-8-sig"
     strip_names: bool = False
     notes: tuple[str, ...] = ()
+    long_numbers: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """CSV'de 15'ten fazla anlamlı basamaklı sayı içeren sayısal sütunlar → örnek hücreler (sayısal rolde
+    reddedilir; bkz. ``column_kind``)."""
 
     @property
     def columns(self) -> list[str]:
@@ -300,9 +306,12 @@ def read_upload(file_name: str, data: bytes, sheet: str | None = None) -> Upload
         try:
             frame = pd.read_csv(io.BytesIO(data), sep=separator, decimal=decimal, encoding=encoding,
                                 na_values=list(NA_VALUES), keep_default_na=False)
+            raw = pd.read_csv(io.BytesIO(data), sep=separator, encoding=encoding, dtype=str,
+                              na_values=list(NA_VALUES), keep_default_na=False)
         except Exception as error:
             raise UploadError("CSV dosyası okunamadı. İlk satırda sütun adları olmalı ve her satırda aynı sayıda "
                               "alan bulunmalı.") from error
+        long_positions = _long_number_columns(frame, raw)
         settings = {"file_format": "csv", "separator": separator, "decimal": decimal, "encoding": encoding}
     else:
         raise UploadError("Yalnız Excel (.xlsx) ve CSV (.csv) dosyaları okunur.")
@@ -313,15 +322,46 @@ def read_upload(file_name: str, data: bytes, sheet: str | None = None) -> Upload
                           "yazın.")
     if len(frame) > MAX_ROWS:
         raise UploadError(f"Dosyada {thousands(len(frame))} satır var; en çok {thousands(MAX_ROWS)} satır okunur.")
-    usable, strip_names, notes = _usable_columns(frame, header)
+    usable, strip_names, notes, positions = _usable_columns(frame, header)
+    if lower.endswith(".csv"):
+        settings["long_numbers"] = {name: long_positions[position] for position, name in zip(positions, usable.columns)
+                                    if position in long_positions}
     return UploadedTable(file_name=file_name, frame=usable, strip_names=strip_names, notes=notes, **settings)
+
+
+def significant_digits(text: str) -> int:
+    """Sayı metnindeki anlamlı basamak sayısı (baştaki sıfırlar ve kesirli kısmın sondaki sıfırları sayılmaz):
+    "0,30000000000000004" → 17, "1234567.0025" → 11, "0.000012" → 2. Sayı değilse 0."""
+
+    match = _LONG_NUMBER.fullmatch(str(text))
+    if not match:
+        return 0
+    digits = (match.group(1) + (match.group(2) or "").rstrip("0")).lstrip("0")
+    return len(digits)
+
+
+def _long_number_columns(frame: pd.DataFrame, raw: pd.DataFrame) -> dict[int, tuple[str, ...]]:
+    """Sayısal okunan CSV sütunlarından (konumla) 15'ten fazla anlamlı basamaklı hücre içerenler ve örnekleri."""
+
+    found: dict[int, tuple[str, ...]] = {}
+    if raw.shape != frame.shape:
+        return found
+    for position in range(frame.shape[1]):
+        column = frame.iloc[:, position]
+        if not pd.api.types.is_numeric_dtype(column) or pd.api.types.is_bool_dtype(column):
+            continue
+        long = [text for text in raw.iloc[:, position].dropna() if significant_digits(text) > MAX_SIGNIFICANT]
+        if long:
+            found[position] = tuple(dict.fromkeys(item.strip() for item in long))[:2]
+    return found
 
 
 def _blank(cell: object) -> bool:
     return cell is None or (isinstance(cell, float) and math.isnan(cell)) or (isinstance(cell, str) and not cell)
 
 
-def _usable_columns(frame: pd.DataFrame, header: list[object]) -> tuple[pd.DataFrame, bool, tuple[str, ...]]:
+def _usable_columns(frame: pd.DataFrame, header: list[object]) -> tuple[pd.DataFrame, bool, tuple[str, ...],
+                                                                       list[int]]:
     """Başlık satırından kullanılabilir sütunlar. Adı metin olmayan, adsız, adı "NA" olan ya da kodda yazılamayan
     işaretler içeren sütunlar seçeneklere alınmaz; aynı adı taşıyan sütunlar dosyayı reddettirir (pandas ve R yinelenen
     adları farklı biçimde değiştirir)."""
@@ -377,7 +417,7 @@ def _usable_columns(frame: pd.DataFrame, header: list[object]) -> tuple[pd.DataF
     usable = frame.iloc[:, positions].copy()
     usable.columns = names
     strip_names = any(cells[position] != name for position, name in zip(positions, names))
-    return usable, strip_names, tuple(notes)
+    return usable, strip_names, tuple(notes), positions
 
 
 # --- Adlar ve sıralar ------------------------------------------------------------------
@@ -497,7 +537,14 @@ def series_kind(series: pd.Series, use: str, label: str, decimal: str | None = N
 
 
 def column_kind(table: UploadedTable, original: str, use: str) -> str:
-    return series_kind(table.frame[original], use, original, table.decimal if table.file_format == "csv" else None)
+    kind = series_kind(table.frame[original], use, original, table.decimal if table.file_format == "csv" else None)
+    long = table.long_numbers.get(original)
+    if long and use == "sayisal":
+        raise UploadError(f"“{original}” sütununda 15'ten fazla anlamlı basamaklı sayılar var (ör. "
+                          f"{_quoted(long, 2)}). Python ve R bu kadar uzun sayıları son basamakta farklı okuyabilir. "
+                          "Dosyada sayıları en çok 15 anlamlı basamakla yazın (Excel'in CSV kaydı böyle yazar) ya da "
+                          "dosyayı Excel (.xlsx) olarak yükleyin.")
+    return kind
 
 
 def _check_number_texts(values: pd.Series, label: str, decimal: str | None) -> None:
@@ -518,6 +565,11 @@ def _check_number_texts(values: pd.Series, label: str, decimal: str | None) -> N
     if any(len(re.split(r"[.,]", text.lstrip("+-"))[0]) > 15 for text in texts):
         raise UploadError(f"“{label}” sütununda çok büyük sayılar var (10^15 ve üstü). Dosyada birimi değiştirin "
                           "(ör. bin TL ya da milyon TL).")
+    long = [text for text in texts if significant_digits(text) > MAX_SIGNIFICANT]
+    if long:
+        raise UploadError(f"“{label}” sütununda 15'ten fazla anlamlı basamaklı sayılar var (ör. {_quoted(long, 2)}). "
+                          "Python ve R bu kadar uzun sayıları son basamakta farklı okuyabilir. Dosyada sayıları en çok "
+                          "15 anlamlı basamakla yazın.")
     dots = [text for text in texts if "." in text]
     commas = [text for text in texts if "," in text]
     if decimal == "," and dots:

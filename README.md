@@ -11,7 +11,7 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 - **Uygulama:** ders notlarındaki çözümlü örnekler, bölüm sırasıyla. Tablolar notlardaki sayıların
   aynısını verir; her adımın Python ve R kodu gösterilir, bütün uygulama tek dosya olarak indirilir.
   Ek veri kaynağı olan konularda sekmenin üstünde veri seçilir: **Notlardaki örnek** (varsayılan),
-  **Alternatif örnek** (aynı adımlar, kurgusal veri) ve **Kendi verin** (Excel ya da CSV dosyası yükleme ve
+  **Alternatif örnek** (aynı adımlar, kurgusal veri) ve **Kendi verini yükle** (Excel ya da CSV dosyası yükleme ve
   sütun seçimi).
 - **Sezgi:** veri üretim süreci (DGP) bilinen kontrollü simülasyonlar. Kaydırıcılarla parametre
   değiştirilir; kod şu anki kaydırıcı değerleriyle üretilir.
@@ -21,8 +21,8 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 |---|---|---|---:|---:|---:|---:|
 | 01 | Veri ve İstatistiğe Giriş | Yeni yapı + ek veri kaynakları | 5 | 14 | 3 | 24 |
 | 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı + ek veri kaynakları | 12 | 56 | 3 | 24 |
-| 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı | 11 | 85 | 3 | 24 |
-| 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı | 10 | 32 | 3 | 24 |
+| 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı + ek veri kaynakları | 11 | 85 | 3 | 24 |
+| 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı + ek veri kaynakları | 10 | 32 | 3 | 24 |
 | 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı | 12 | 40 | 3 | 24 |
 | 06 | Olasılığın Temelleri | Yeni yapı | 9 | 35 | 3 | 24 |
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı | 10 | 61 | 3 | 24 |
@@ -35,7 +35,9 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
 yolun aynısını verir.
 
-Ek veri kaynakları (alternatif örnek ve kendi verin) şu an Konu 1–2'de vardır.
+Ek veri kaynakları (alternatif örnek ve kendi verini yükle) şu an Konu 1–4'te vardır. Konu 3'te yüklenen
+veride sınıf sayısı kaydırıcıyla seçilir (öneri ⌈1 + log₂ n⌉); Konu 4'te ağırlıklı ortalama için grup sütunu,
+geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır.
 
 ## İki dilde kod
 
@@ -47,8 +49,8 @@ sonucun hangi anlamda aynı olduğu yazılır:
   R'nin rastgele sayı üreteci farklı olduğu için aynı tohum aynı çekilişi vermez (Sezgi sekmesi).
 
 İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları karşılaştırır (`OK` / `HATA`):
-notlardaki örnekte ders notlarındaki basılı sayılarla, alternatif örnekte ve kendi verinde uygulamanın aynı
-veriyle gösterdiği sayılarla. Kendi verin dosyası, yüklenen dosyayı okur; dosya betikle aynı klasörde olmalıdır.
+notlardaki örnekte ders notlarındaki basılı sayılarla, alternatif örnekte ve yüklenen veride uygulamanın aynı
+veriyle gösterdiği sayılarla. Yüklenen veriyle üretilen betik o dosyayı okur; dosya betikle aynı klasörde olmalıdır.
 Gerekli paketler:
 
 - Python 3.12: `pandas`, `numpy`, `matplotlib`. Olasılık dağılımı fonksiyonu (binom, Poisson, hipergeometrik,
@@ -91,7 +93,7 @@ git diff --check
 
 Testler üretilen Python kodunu çalıştırır ve notlardaki sayıları üretip üretmediğini denetler. `Rscript`
 kuruluysa R kodu da aynı biçimde denetlenir; kurulu değilse R testleri atlanır. Yüklenen Excel dosyasını R'de
-okuyan iki test yalnız `readxl` kuruluysa çalışır.
+okuyan testler (ek veri kaynağı olan her konu için bir tane) yalnız `readxl` kuruluysa çalışır.
 
 ## Veri ve hesaplama kaynakları
 

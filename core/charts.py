@@ -243,7 +243,7 @@ def _histogram(op: Histogram, data: pd.DataFrame, state: LabState) -> go.Figure:
             go.Bar(
                 x=centers, y=counts, width=np.diff(edges), name=label,
                 marker={"color": PALETTE[index % len(PALETTE)], "opacity": 0.6, "line": {"width": 0}},
-                hovertemplate=f"{label}<br>%{{x:.2f}} civarı: %{{y}} tekrar<extra></extra>",
+                hovertemplate=f"{label}<br>%{{x:.2f}} civarı: %{{y}} {op.hover_unit}<extra></extra>",
             )
         )
     for index, (reference, label) in enumerate(op.references):

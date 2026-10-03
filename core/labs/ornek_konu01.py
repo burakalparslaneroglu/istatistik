@@ -1,8 +1,8 @@
 """Konu 1 genel uygulaması: bir veri setini okumak ve betimlemek.
 
 Ders notlarındaki adımlar (§1.2, §1.3–1.4, §1.5, §1.7, §1.11) aynı numaralarla, verisi değiştirilebilir biçimde yazılır.
-Alternatif örnek kurgusal bir kafe zinciri veri setidir; "kendi verin" seçeneğinde aynı adımlar öğrencinin dosyasıyla
-kurulur. Notlardaki uygulama (``core.labs.konu01``) değişmez.
+Alternatif örnek kurgusal bir kafe zinciri veri setidir; "kendi verini yükle" seçeneğinde aynı adımlar öğrencinin
+dosyasıyla kurulur. Notlardaki uygulama (``core.labs.konu01``) değişmez.
 """
 
 from __future__ import annotations
