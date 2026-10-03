@@ -24,7 +24,7 @@ from typing import Callable, Iterable, Mapping
 import pandas as pd
 
 from core.labs.runner import run_lab
-from core.labs.spec import LabSpec, Operation
+from core.labs.spec import DotPlot, LabSpec, Operation, PairStatistic, Percentile, Scalar, Statistic
 
 SOURCE_LABELS = {
     "notlar": "Notlardaki örnek",
@@ -221,12 +221,31 @@ class Case:
         return role in self.roles
 
 
+def _reference_decimals(spec: LabSpec) -> LabSpec:
+    """Nokta grafiğindeki başvuru çizgilerinin açıklamada gösterdiği değer, o skaleri hesaplayan işlemin basamağıyla
+    yazılır (ör. alt sınır 11,625; iki basamakla 11,62 olurdu ve metrikle uyuşmazdı)."""
+
+    decimals: dict[str, int] = {}
+    steps = []
+    for step in spec.steps:
+        operations = []
+        for op in step.operations:
+            if isinstance(op, (Statistic, PairStatistic, Scalar, Percentile)):
+                decimals[op.name] = op.decimals
+            if isinstance(op, DotPlot) and op.references:
+                op = replace(op, reference_decimals=tuple(decimals.get(name, 2) for name, _ in op.references))
+            operations.append(op)
+        steps.append(replace(step, operations=tuple(operations)))
+    return replace(spec, steps=tuple(steps))
+
+
 def with_app_values(spec: LabSpec) -> LabSpec:
-    """Kontrollerin beklenen değerlerini uygulamanın kendi hesabıyla doldurur (notlar dışındaki kaynaklar)."""
+    """Kontrollerin beklenen değerlerini uygulamanın kendi hesabıyla doldurur (notlar dışındaki kaynaklar); nokta
+    grafiklerinin başvuru değerleri metriklerle aynı basamakla gösterilir (``_reference_decimals``)."""
 
     run = run_lab(spec)
     steps = []
-    for step in spec.steps:
+    for step in _reference_decimals(spec).steps:
         results = run.step_checks(step.number)
         checks = []
         for result in results:

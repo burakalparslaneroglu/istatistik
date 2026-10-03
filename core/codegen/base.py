@@ -11,6 +11,7 @@ from core.labs.spec import (
     BoxSummary,
     Check,
     ClassTable,
+    Count,
     CrossTab,
     Derive,
     Draw,
@@ -29,8 +30,11 @@ from core.labs.spec import (
     NewSample,
     Operation,
     Outcomes,
+    PairStatistic,
+    Percentile,
     ReadFile,
     CompleteCases,
+    Subset,
     Rectangles,
     ReplaceMax,
     RowSum,
@@ -38,6 +42,8 @@ from core.labs.spec import (
     ScalarTable,
     ScalarTarget,
     Selections,
+    Shape,
+    Statistic,
     Support,
 )
 
@@ -127,7 +133,7 @@ def numeric_columns(spec: LabSpec) -> set[tuple[str, str]]:
                 found |= {(op.frame, column) for column, values in op.stages if _numbers(values)}
             elif isinstance(op, (Derive, Event, Draw, DrawDiscrete, DrawCount, MapCodes, Support, Rectangles, RowSum)):
                 found.add((op.frame, op.name))
-            elif isinstance(op, CompleteCases):
+            elif isinstance(op, (CompleteCases, Subset)):
                 found |= {(op.frame, column) for frame, column in list(found) if frame == op.source}
             elif isinstance(op, ReplaceMax):
                 found |= {(op.frame, column) for frame, column in list(found) if frame == op.source}
@@ -189,6 +195,19 @@ def text(value: object) -> str:
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
     return E.format_number(float(value))
+
+
+def expected_text(expected: float, decimals: int, source: str) -> str:
+    """Kontrol satırındaki beklenen değer. Notlarda basılı değer, gösterilen basamakla. Diğer kaynaklarda uygulamanın
+    değeri iki basamak fazlasıyla (sondaki sıfırlar atılır): gösterilen basamağa yuvarlanmış değer iki gösterimin
+    ortasına yakınsa iki dilin son basamaktaki küçük farkı toleransı (0,5·10⁻ᵈ) aşmasın."""
+
+    if source == "notlar":
+        return f"{expected:.{decimals}f}"
+    shown = f"{expected:.{decimals + 2}f}"
+    if "." in shown:
+        shown = shown.rstrip("0").rstrip(".")
+    return "0" if shown in ("-0", "") else shown
 
 
 def wrapped(opening: str, items: list[str], closing: str, width: int = 88, per_line: int | None = None,
@@ -349,7 +368,23 @@ class Generator:
             if isinstance(op, JoinColumns):
                 used |= {table for _, table, _ in op.columns}  # yan yana toplanan tablolar
         produced = {getattr(op, "result", None) for op in step.operations}
-        return bool(used - created - produced)
+        if used - created - produced:
+            return True
+        if self.spec.source == "notlar":
+            return False  # notların adım kodları değişmez
+        # Önceki bir adımın skalerini (ör. varyans) kullanan ama veri çerçevesi kullanmayan adım da tek başına çalışmaz.
+        scalars: set[str] = set()
+        for op in flatten(step.operations):
+            if isinstance(op, (Statistic, PairStatistic, Scalar, Count)):
+                scalars.add(op.name)
+            elif isinstance(op, Percentile):
+                scalars |= {op.name, op.location}
+            elif isinstance(op, Shape):
+                scalars |= {op.observations, op.variables}
+        referenced: set[str] = set()
+        for expression in expressions(step.operations):
+            referenced |= E.references(expression)
+        return bool(referenced - scalars)
 
     def script(self) -> str:
         """Bütün uygulamayı tek başına çalışan bir dosya olarak üretir."""

@@ -271,13 +271,18 @@ def _histogram(op: Histogram, data: pd.DataFrame, state: LabState) -> go.Figure:
     return style_figure(figure, title=op.title, x_title=op.x_label, y_title=op.y_label)
 
 
-def _reference_lines(figure: go.Figure, references: list[tuple[float, str]]) -> None:
-    """Dikey başvuru çizgileri; yardımcı eksende (0–1) tam boy çizilir ve açıklamada görünür."""
+def _reference_lines(figure: go.Figure, references: list[tuple[float, str]], decimals: tuple[int, ...] = ()) -> None:
+    """Dikey başvuru çizgileri; yardımcı eksende (0–1) tam boy çizilir ve açıklamada görünür. ``decimals``: değerlerin
+    açıklamadaki basamağı (sırayla; notlar dışındaki kaynaklar); verilmeyen için 2. Basamak verilmişse gösterimde sıfıra
+    yuvarlanan değer işaretsiz yazılır (kayan nokta gürültüsü: −1,85e-17 → "0,00", "−0,00" değil)."""
 
     for index, (value, label) in enumerate(references):
+        places = decimals[index] if index < len(decimals) else 2
+        if index < len(decimals) and abs(value) < 0.5 * 10.0 ** -places:
+            value = 0.0
         figure.add_trace(
             go.Scatter(
-                x=[value, value], y=[0, 1], mode="lines", name=f"{label}: {tr_number(value, 2)}", yaxis="y2",
+                x=[value, value], y=[0, 1], mode="lines", name=f"{label}: {tr_number(value, places)}", yaxis="y2",
                 hoverinfo="skip",
                 line={"color": REFERENCE_COLORS[index % len(REFERENCE_COLORS)], "width": 2.5,
                       "dash": ("dash", "dot", "dashdot")[index % 3]},
@@ -316,7 +321,8 @@ def _dot_plot(op: DotPlot, data: pd.DataFrame, state: LabState) -> go.Figure:
             hovertemplate="%{x}<extra></extra>",
         )
     )
-    _reference_lines(figure, [(float(state.scalars[name]), label) for name, label in op.references])
+    _reference_lines(figure, [(float(state.scalars[name]), label) for name, label in op.references],
+                     op.reference_decimals)
     top = int(data["yigin"].max()) if len(data) else 1
     figure.update_layout(yaxis={"range": [0.3, top + 0.7], "tickvals": list(range(1, top + 1))},
                          legend={"orientation": "h", "y": -0.3})

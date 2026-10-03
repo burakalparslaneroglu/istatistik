@@ -11,6 +11,7 @@ from core.codegen.base import (
     PALETTE,
     REFERENCE_COLORS,
     Generator,
+    expected_text,
     flatten,
     reference_words,
     text,
@@ -61,6 +62,7 @@ from core.labs.spec import (
     PmfWithDensity,
     ReadFile,
     CompleteCases,
+    Subset,
     Rectangles,
     ReplaceMax,
     RowSum,
@@ -158,6 +160,41 @@ _BOX_SUMMARY = [
     "    aykiri_sayisi = sum(x < alt | x > ust))",
     "}",
 ]
+_BOX_SUMMARY_ROUNDED = [
+    "# Kutu grafiği özeti: çeyrekler ders kuralıyla (yuzdelik); bıyıklar Q1 - 1,5·IQR ile Q3 + 1,5·IQR",
+    "# sınırlarının içindeki en uç gözlemlere uzanır; sınırların dışındakiler aykırı değer adayıdır. Sınırlar en çok",
+    "# ondalik basamaklıdır: yuvarlama kayan nokta gürültüsünü atar, tam sınırdaki gözlem aykırı sayılmaz.",
+    "kutu_ozeti <- function(x, ondalik = NULL) {",
+    "  x <- sort(x)",
+    "  q1 <- yuzdelik(x, 25)",
+    "  medyan <- yuzdelik(x, 50)",
+    "  q3 <- yuzdelik(x, 75)",
+    "  iqr <- q3 - q1",
+    "  alt <- q1 - 1.5 * iqr",
+    "  ust <- q3 + 1.5 * iqr",
+    "  if (!is.null(ondalik)) {",
+    "    alt <- round(alt, ondalik)",
+    "    ust <- round(ust, ondalik)",
+    "  }",
+    "  icerde <- x[x >= alt & x <= ust]",
+    "  c(en_kucuk = x[1], q1 = q1, medyan = medyan, q3 = q3, en_buyuk = x[length(x)], iqr = iqr,",
+    "    alt_sinir = alt, ust_sinir = ust, alt_biyik = min(icerde), ust_biyik = max(icerde),",
+    "    aykiri_sayisi = sum(x < alt | x > ust))",
+    "}",
+]
+"""Notlar dışındaki kaynaklarda (``BoxSummary.fence_decimals``): sınırlar sınıflamadan önce yuvarlanır."""
+
+
+def _box_digits(op) -> int:
+    """Kutu özetinin yazdırılan basamağı: 3; yuvarlanan sınırlar daha çok basamaklıysa o kadar."""
+
+    return 3 if op.fence_decimals is None else max(3, op.fence_decimals)
+
+
+def _fence_argument(op) -> str:
+    """``kutu_ozeti`` çağrısının ek argümanı: sınırların yuvarlanacağı basamak (``BoxSummary.fence_decimals``)."""
+
+    return "" if op.fence_decimals is None else f", {op.fence_decimals}"
 _TREE_BOX = [
     "# Olasılık ağacında düğüm: metnin çevresinde çerçeve (temel R'de metin kutusu yoktur)",
     "kutu <- function(x, y, etiket) {",
@@ -302,7 +339,8 @@ class RGenerator(Generator):
         if boxes or any(isinstance(op, Percentile) and op.method == "ders" for op in flat):
             lines += _PERCENTILE + [""]
         if boxes:
-            lines += _BOX_SUMMARY + [""]
+            rounded = any(op.fence_decimals is not None for op in flat if isinstance(op, (BoxSummary, BoxPlot)))
+            lines += (_BOX_SUMMARY_ROUNDED if rounded else _BOX_SUMMARY) + [""]
         if any(isinstance(op, Selections) and op.ordered for op in flat):
             lines += _ORDERED_SELECTIONS + [""]
         if any(isinstance(op, TreeDiagram) for op in flat):
@@ -354,6 +392,8 @@ class RGenerator(Generator):
             return self._read_file(op)
         if isinstance(op, CompleteCases):
             return self._complete_cases(op)
+        if isinstance(op, Subset):
+            return self._subset_frame(op)
         if isinstance(op, Outcomes):
             return self._outcomes(op)
         if isinstance(op, Selections):
@@ -494,14 +534,15 @@ class RGenerator(Generator):
                 f"print(round({op.result}, {op.decimals}))",
             ]
         if isinstance(op, BoxSummary):
-            items = [f"  {text(label)} = kutu_ozeti({frame}${variable})," for frame, variable, label in op.series]
+            items = [f"  {text(label)} = kutu_ozeti({frame}${variable}{_fence_argument(op)}),"
+                     for frame, variable, label in op.series]
             return [
                 "# Beş sayı özeti, IQR, aykırı değer sınırları ve bıyık uçları",
                 f"{op.result} <- data.frame(",
                 *items,
                 "  check.names = FALSE",
                 ")",
-                f"print(round({op.result}, 3))",
+                f"print(round({op.result}, {_box_digits(op)}))",
             ]
         if isinstance(op, ClassTable):
             return self._class_table(op)
@@ -644,17 +685,25 @@ class RGenerator(Generator):
                 return f'as.numeric(sub(",", ".", {column}, fixed = TRUE))'
             return f"as.numeric({column})" if csv else column
 
-        for name, _, kind in op.columns:
+        def exact(code: str, position: int) -> str:
+            """R'nin metinden sayı okuması altı ve daha çok ondalık basamakta son ikili basamakta pandas'tan
+            ayrılabilir; sütunun basamağına yuvarlama aynı sayıyı verir (beş ve daha az basamakta gerekmez)."""
+
+            places = max((decimal_places(row[position], 15) for row in op.rows
+                          if isinstance(row[position], float)), default=0)
+            return f"round({code}, {places})" if places >= 6 else code
+
+        for position, (name, _, kind) in enumerate(op.columns):
             column = f"{op.frame}${name}"
             if kind == "kod":
                 lines.append(f'{column} <- ifelse(is.na({column}), NA, sprintf("%.0f", {number(column)} + 0))'
                              "  # tam sayı kodları kategori etiketi (+ 0: −0 yerine 0)")
             elif kind == "sayi_metin":
-                lines.append(f'{column} <- as.numeric(sub(",", ".", {column}, fixed = TRUE))'
-                             "  # metin olarak yazılmış sayı")
+                code = exact(f'as.numeric(sub(",", ".", {column}, fixed = TRUE))', position)
+                lines.append(f"{column} <- {code}  # metin olarak yazılmış sayı")
             elif kind == "sayi" and csv:
                 mark = "; ondalık virgül" if op.decimal == "," else ""
-                lines.append(f"{column} <- {number(column)}  # sayı{mark}")
+                lines.append(f"{column} <- {exact(number(column), position)}  # sayı{mark}")
         lines.append(f"print(nrow({op.frame}))  # gözlem sayısı")
         return lines
 
@@ -664,6 +713,16 @@ class RGenerator(Generator):
             f"# {op.comment}",
             f"{op.frame} <- {op.source}[complete.cases({op.source}[, {_vector(op.columns)}, drop = FALSE]), , "
             "drop = FALSE]",
+            f"rownames({op.frame}) <- NULL",
+            f"print(nrow({op.frame}))  # gözlem sayısı",
+        ]
+
+    @staticmethod
+    def _subset_frame(op: Subset) -> list[str]:
+        # %in%: grup sütunu boş (NA) olan satırlar seçilmez (== NA satırı döndürürdü)
+        return [
+            f"# {op.comment}",
+            f"{op.frame} <- {op.source}[{op.source}${op.column} %in% {text(op.value)}, , drop = FALSE]",
             f"rownames({op.frame}) <- NULL",
             f"print(nrow({op.frame}))  # gözlem sayısı",
         ]
@@ -1017,7 +1076,11 @@ class RGenerator(Generator):
         if op.x_range is not None:
             low, high = (E.format_number(value) for value in op.x_range)
             limits = f"xlim = c({low}, {high}), "  # karşılaştırılan grafiklerde aynı yatay eksen
+        # Varsayılandan farklı eksen notu (ör. sınır çizgileri) koda yazılır; notların kodu değişmez.
+        note = ([f"# xlim: {op.range_note}"] if op.x_range is not None
+                and op.range_note != DotPlot.__dataclass_fields__["range_note"].default else [])
         lines = [
+            *note,
             f"yigin <- ave({source}, {source}, FUN = seq_along)  # aynı değerdeki gözlemler üst üste",
             f'plot({source}, yigin, pch = 19, col = "{PALETTE[0]}", yaxt = "n", ylim = c(0.5, max(yigin) + 0.5),',
             f'     {limits}xlab = "{_quote(op.x_label)}", ylab = "{_quote(op.y_label)}", main = "{_quote(op.title)}")',
@@ -1084,7 +1147,7 @@ class RGenerator(Generator):
             "seriler <- list(",
             *items,
             ")",
-            "ozetler <- lapply(seriler, kutu_ozeti)",
+            f"ozetler <- lapply(seriler, kutu_ozeti{_fence_argument(op)})",
             "aykiri <- c()",
             "grup <- c()",
             "for (i in seq_along(seriler)) {",
@@ -1491,7 +1554,7 @@ class RGenerator(Generator):
     def check_lines(self, checks: tuple[Check, ...]) -> list[str]:
         lines = [f'cat("{reference_words(self.spec)[0]}\\n")']
         for check in checks:
-            expected = f"{check.expected:.{check.decimals}f}"
+            expected = expected_text(check.expected, check.decimals, self.spec.source)
             target = self.target(check.target)
             lines.append(f'kontrol_et("{_quote(check.label)}", {target}, {expected}, {check.decimals})')
         return lines

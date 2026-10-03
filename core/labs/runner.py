@@ -59,6 +59,7 @@ from core.labs.spec import (
     PmfWithDensity,
     ReadFile,
     CompleteCases,
+    Subset,
     Rectangles,
     ReplaceMax,
     RowSum,
@@ -218,6 +219,9 @@ def execute(op: Operation, state: LabState) -> None:
     elif isinstance(op, CompleteCases):
         source = state.frames[op.source]
         state.frames[op.frame] = source.dropna(subset=list(op.columns)).reset_index(drop=True)
+    elif isinstance(op, Subset):
+        source = state.frames[op.source]
+        state.frames[op.frame] = source[source[op.column] == op.value].reset_index(drop=True)
     elif isinstance(op, Outcomes):
         state.frames[op.frame] = T.outcomes(op.stages)
     elif isinstance(op, Selections):
@@ -341,7 +345,8 @@ def execute(op: Operation, state: LabState) -> None:
         )
     elif isinstance(op, BoxSummary):
         state.tables[op.result] = pd.DataFrame(
-            {label: T.box_summary(state.frames[frame][variable]) for frame, variable, label in op.series}
+            {label: T.box_summary(state.frames[frame][variable], op.fence_decimals)
+             for frame, variable, label in op.series}
         )
     elif isinstance(op, ClassTable):
         values = state.frames[op.frame][op.variable]
@@ -379,7 +384,7 @@ def execute(op: Operation, state: LabState) -> None:
         boxes = []
         for frame, variable, label in op.series:
             values = state.frames[frame][variable]
-            summary = T.box_summary(values)
+            summary = T.box_summary(values, op.fence_decimals)
             boxes.append((label, summary, T.outliers(values, summary)))
         state.plots[plot_key(op)] = boxes
     elif isinstance(op, Histogram):

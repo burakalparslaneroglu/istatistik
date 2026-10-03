@@ -287,17 +287,20 @@ def percentile(values, p: float, method: str = "ders") -> float:
     return float(x[k - 1] + (location - k) * (x[k] - x[k - 1]))
 
 
-def box_summary(values) -> pd.Series:
+def box_summary(values, fence_decimals: int | None = None) -> pd.Series:
     """Kutu grafiği özeti (``BOX_ROWS``): beş sayı özeti ders kuralıyla, IQR, 1,5·IQR sınırları, bıyık uçları.
 
     Bıyıklar sınırların içindeki en küçük ve en büyük gözleme uzanır; sınırların dışındaki gözlemler aykırı
-    değer adaylarıdır. Üretilen koddaki ``kutu_ozeti`` fonksiyonuyla aynı işlem sırası.
+    değer adaylarıdır. Üretilen koddaki ``kutu_ozeti`` fonksiyonuyla aynı işlem sırası. ``fence_decimals``: sınırlar
+    sınıflamadan önce bu basamağa yuvarlanır (``BoxSummary.fence_decimals``).
     """
 
     x = np.sort(np.asarray(values, dtype=float))
     q1, medyan, q3 = percentile(x, 25), percentile(x, 50), percentile(x, 75)
     iqr = q3 - q1
     alt, ust = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    if fence_decimals is not None:
+        alt, ust = np.round(alt, fence_decimals), np.round(ust, fence_decimals)
     icerde = x[(x >= alt) & (x <= ust)]
     values_by_row = {
         "en_kucuk": x[0], "q1": q1, "medyan": medyan, "q3": q3, "en_buyuk": x[-1], "iqr": iqr,

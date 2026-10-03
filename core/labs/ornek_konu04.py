@@ -215,10 +215,14 @@ def _axis(low: float, high: float) -> tuple[float, float]:
 
 def _spread_plot(case: Case, frame: str, column: str, x_label: str, title: str,
                  references: tuple[tuple[str, str], ...], x_range: tuple[float, float] | None, n: int,
-                 low: float, high: float):
-    """Nokta grafiği; büyük veride (n > 300) aynı başvuru çizgileriyle histogram."""
+                 low: float, high: float, range_note: str | None = None):
+    """Nokta grafiği; büyük veride (n > 300) aynı başvuru çizgileriyle histogram. ``range_note``: sabit yatay eksenin
+    koddaki açıklaması (verilmezse "karşılaştırılan grafiklerde aynı yatay eksen")."""
 
     if n <= MAX_DOTS:
+        if range_note is not None:
+            return DotPlot(frame, column, x_label, title, references=references, x_range=x_range,
+                           range_note=range_note)
         return DotPlot(frame, column, x_label, title, references=references, x_range=x_range)
     lower, upper = x_range if x_range is not None else _axis(low, high)
     return Histogram(frame, ((column, "Gözlemler"),), HISTOGRAM_BINS, lower, upper, title, x_label,

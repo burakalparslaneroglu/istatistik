@@ -6,7 +6,7 @@ kendiliğinden kapsar. Kayıtta olmayan konularda sekme yalnız notlardaki örne
 
 from __future__ import annotations
 
-from core.labs import ornek_konu01, ornek_konu02, ornek_konu03, ornek_konu04
+from core.labs import ornek_konu01, ornek_konu02, ornek_konu03, ornek_konu04, ornek_konu05, ornek_konu06
 from core.labs.ornek import TopicVariants
 
 VARIANTS: dict[str, TopicVariants] = {
@@ -14,6 +14,8 @@ VARIANTS: dict[str, TopicVariants] = {
     "konu02": ornek_konu02.VARIANTS,
     "konu03": ornek_konu03.VARIANTS,
     "konu04": ornek_konu04.VARIANTS,
+    "konu05": ornek_konu05.VARIANTS,
+    "konu06": ornek_konu06.VARIANTS,
 }
 
 

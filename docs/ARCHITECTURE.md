@@ -88,8 +88,15 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   (`SeparateColumn`, `Case.extra["separate"]`). Ana verinin satır çıkarma kuralı ve boş hücre notları ona
   uygulanmaz; sütunda hiç dolu hücre yoksa ileti verilir.
 - **Kontroller:** notlar dışındaki kaynaklarda beklenen değerler uygulamanın kendi hesabıdır (`with_app_values`);
-  indirilen kod bu değerleri yeniden üretmelidir. Alternatif örneklerin değerleri testlerde motordan bağımsız
-  bir hesapla doğrulanır.
+  indirilen kod bu değerleri yeniden üretmelidir. Kontrol satırına beklenen değer gösterilen basamaktan iki basamak
+  fazlasıyla yazılır (`codegen.base.expected_text`; notlarda basılı değer olduğu gibi): yuvarlanmış değer iki
+  gösterimin ortasına yakınsa iki dilin son basamaktaki küçük farkı toleransı (0,5·10⁻ᵈ) aşmaz. Alternatif
+  örneklerin değerleri testlerde motordan bağımsız bir hesapla doğrulanır. Notların üretilen kodu (betik, adım
+  kodları, Sezgi betikleri; iki dil) konu başına md5 özetiyle kilitlidir (`test_notes_outputs_are_unchanged`).
+- **Adım kodu:** notlar dışındaki kaynaklarda önceki bir adımın skalerini kullanan adımın kodu "Önceki adımlar
+  çalıştırılmış olmalıdır" notunu taşır (`Generator.depends_on_earlier`); notların adım kodları değişmez.
+- **Alt çerçeve (`Subset`):** bir sütunun bir değerine eşit satırlar yeni bir çerçeve olur (Konu 5'te iki grup;
+  Python `df[df[s] == v]`, R `%in%`: boş hücreli satır hiçbir gruba girmez).
 - **Dosya okuma (`ReadFile`):** kod dosyayı okur (Python `pd.read_excel`/`pd.read_csv`, R `readxl::read_excel`/
   `read.csv`; boş hücre ve `NA` eksik değer), seçilen sütunları ASCII adlarla yeniden adlandırır ve metin
   hücrelerini iki dilde aynı kuralla temizler: bölünmez boşluk boşluğa çevrilir, baştaki ve sondaki boşluklar
@@ -98,7 +105,9 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   dosyasının bütün sütunlarını metin olarak okur ve sayıları açıkça dönüştürür. Uygulama aynı kuralları
   `core/labs/kendi_veri` ile uygular (`clean_text`, `code_text`); tanım temizlenmiş değerleri taşır. CSV'de
   ayırıcı, ondalık işareti ve kodlama (dosyanın tamamı UTF-8 ya da Windows-1254 olarak çözülür) algılanır ve kodda
-  açıkça yazılır.
+  açıkça yazılır. R'nin metinden sayı okuması altı ve daha çok ondalık basamakta son ikili basamakta pandas'tan
+  ayrılabildiği için böyle bir CSV sütunu R'de `round(as.numeric(…), d)` ile okunur (d: sütunun basamağı; daha az
+  basamakta kod değişmez).
 - **Boş hücreler:** satırlar yalnız zorunlu rolün (ör. ana değişken) boş hücreleri yüzünden çıkarılır. İsteğe
   bağlı bir rolü kullanan adım kendi tam gözlemlerini seçer (`CompleteCases`: Konu 2'de çapraz tablo ve Simpson
   adımları, Konu 4'te ağırlıklı ortalama) ve kaç gözlemle çalıştığını söyler; yalnız tabloda gösterilen sütunlardaki boşluklar yerinde kalır.
@@ -111,7 +120,9 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   karışık ondalık ya da çok büyük sayı, binlik ayırıcılı, ondalık işareti karışık ya da belirsiz (ayırıcıdan sonra
   hep üç basamak) metin sayılar; CSV'de 15'ten fazla anlamlı basamaklı sayılar (ör. 0,30000000000000004: pandas
   ile R son basamakta farklı okuyabilir; Excel dosyasında sayılar ikili değerle okunduğu için sorun yoktur).
-  Konuya özgü: bütün değerleri aynı sayısal sütun (Konu 3–4); Konu 4'te değerleri
+  Konuya özgü: bütün değerleri aynı sayısal sütun (Konu 3–5); Konu 5'te x ile y için aynı sütun, x'in ya da bir
+  grubun değerleri büyüklüklerine göre çok yakın (en büyük − en küçük < 10⁻⁷ × büyüklük), iki gözlemden az olan grup;
+  Konu 6'da iki olay için aynı sütun ve ekip büyüklüğünü aşan seçim (kaydırıcının altında); Konu 4'te değerleri
   büyüklüklerine göre birbirine çok yakın sütun (en büyük − en küçük < 10⁻⁹ × büyüklük; grafik eksenleri farkı
   gösteremez); Konu 3'te |x| ≥ 10¹⁰ olan değerler ve hiçbir sınıf sayısının (5–20) sınırlarını iki dilde aynı
   yazamadığı veri (çok küçük ya da çok basamaklı değerler; ileti çarpma ya da ortak sayı çıkarma önerir). Yalnız
@@ -134,6 +145,10 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   anlamlı basamağıyla; tam sayı denetimi toleranssızdır (1e-11 gibi değerler 0 görünmez). Notlardaki örneğin
   ekranı değişmez (`lab_ui._decimals(small=False)`). Üretilen kod sınıf tablosunu üstel gösterim olmadan yazdırır
   (Python `to_string(float_format=…)`, R `format(…, digits = 15, scientific = FALSE)`); notlardaki kod aynıdır.
+  Yine yalnız notlar dışında: işaretli sıfır ("−0,00", kayan nokta gürültüsü) işaretsiz yazılır (metrik, tablo,
+  skaler tablosu, grafik açıklaması); kutu özeti değerleri kısa ondalık yazımlarıyla tam (11,625) ve sütunları
+  serilerin etiketleriyle gösterilir; nokta grafiğindeki başvuru çizgisinin değeri metrikle aynı basamakla yazılır
+  (`DotPlot.reference_decimals`, `with_app_values` doldurur).
 - **Kategori sırası:** alfabetik (Türkçe sıra, sayılar değerleriyle), dosyadaki ilk görülme sırası ya da
   frekans. Sıra kodda açık bir liste olarak yazılır; dil ve yerel ayar farkı sonucu değiştirmez.
 - **Gizlilik:** yüklenen dosya ve ondan kurulan uygulama yalnız `st.session_state` içinde tutulur; ortak
@@ -185,6 +200,20 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   `markers=False` uzun seriler için yalnız çizgi.
 - `JoinColumns`: aynı satır adlı tabloların sütunlarını yan yana toplar (ör. gözlenen oran, Chebyshev alt sınırı,
   ampirik kural). `Histogram` bir veri çerçevesini de çizebilir; başvuru çizgisi sayı ya da skaler adıdır.
+- Genel uygulama (`ornek_konu05`): yayılım ölçüleri tek sayısal sütunda; tam iki kategorili grup sütunu (Adım 1,
+  2, 4, 6, 9) ve ikinci sayısal sütun (Adım 5, 10, 11) isteğe bağlıdır. Metindeki ortalama, kareler toplamı,
+  varyans, kovaryans ve korelasyon kesin ondalık aritmetikle n·Σx² − (Σx)² özdeşliğinden kurulur (sonlu sonuç tam
+  kalır; tam doğrusal ilişkide r = ±1, orantılı sütunlarda CV'ler eşit). Gösterim basamağı kayan noktalı hesabın
+  olası farkıyla sınırlanır (`_safe_digits`: 10⁻ᵈ ≥ 5·fark; `_noise`, `_std_bounds`); fark basamak sıfırda bile
+  toleransı aşabiliyorsa o kontrol atlanır (`_checkable`; çok büyük değerlerde ör. ilk gözlemin kareli sapması) ve
+  kod notu bunu söyler. x̄ ± ks sınırı göreli payla karşılaştırılır (`_slack`; en az 10⁻⁹, veride kayan nokta farkı
+  büyükse daha büyük on kuvveti); tam sınırdaki gözlem iki dilde içeride sayılır.
+- `BoxSummary.fence_decimals` / `BoxPlot.fence_decimals` (yalnız notlar dışında): 1,5·IQR sınırları sınıflamadan
+  önce d + 3 basamağa yuvarlanır (çeyrekler komşu gözlemlerin 0,25'lik adımlarla ara değeridir); tam sınırdaki gözlem
+  aykırı değer sayılmaz. Uygulama (`tables.box_summary`), Python (`np.round`) ve R (`round`) aynı ikili sayıyı verir;
+  üretilen kod `kutu_ozeti(x, ondalik)` sürümünü kullanır. Kayan nokta farkı bu basamağın yarısına yaklaşıyorsa
+  (çok büyük değerler) yuvarlama yapılmaz ve tam sınırdaki gözlemin sınıflaması kesin hesaptan ayrılırsa metin bunu
+  söyler. `DotPlot.range_note`: sabit yatay eksenin koddaki açıklaması.
 
 ### Sayma ve olaylar (Konu 6)
 
@@ -200,6 +229,12 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
 - `ShowFrame`: bir veri çerçevesinin seçili sütunlarını gösterir (ör. örnek noktalar ve olay göstergeleri).
 - İfade dilinde `cummean` (birikimli ortalama), `seq` (1, …, n), `factorial`, `comb`, `perm` vardır; R'de
   `choose` ve `factorial` ile yazılır.
+- Genel uygulama (`ornek_konu06`): E ve F olayları iki kategorik sütunun seçilen kategorileridir (Adım 2, 4, 6, 8,
+  9); zarın yüz sayısı m (4–20), ekip büyüklüğü N (2–10) ve seçilen kişi sayısı n (1–10, n ≤ N) kaydırıcıdır.
+  Kombinasyon ve permütasyonlar 720 satıra kadar listelenir. Olasılıklar kesirle (`Fraction`) hesaplanır; en çok dört
+  basamakla tam yazılabiliyorsa "=", değilse "≈" (zincirde yerine konan terim yuvarlanmışsa da "≈"). Kümeler altı
+  öğeye kadar tek tek, daha uzunsa düzenli baş kısım üç noktayla ve düzeni bozan son öğeler açıkça yazılır
+  ({2, 4, …, 18, 19, 20}).
 
 ### Koşullu olasılık, rassal değişken ve ortak dağılım (Konu 7–8)
 

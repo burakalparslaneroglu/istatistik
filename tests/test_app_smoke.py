@@ -96,7 +96,8 @@ def test_topic_switch_keeps_text_scale_and_code_language() -> None:
 def test_lab_source_selector_offers_the_alternative_example() -> None:
     app = _run_app()
     assert app.segmented_control(key="konu01_lab_kaynak").value == "notlar"
-    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10)):
+    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
+                         ("konu06", 9)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
         assert "Kurgusal veri" in _markdown(app)
@@ -106,8 +107,8 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
                 app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
                 assert not app.exception, (topic, language, number)
                 assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
-    app.radio(key="selected_topic").set_value("konu05").run()
-    assert not any(widget.key == "konu05_lab_kaynak" for widget in app.segmented_control)
+    app.radio(key="selected_topic").set_value("konu07").run()
+    assert not any(widget.key == "konu07_lab_kaynak" for widget in app.segmented_control)
 
 
 def test_own_data_upload_runs_every_step() -> None:
@@ -121,8 +122,11 @@ def test_own_data_upload_runs_every_step() -> None:
         "konu02": {"satir": "Şube", "secenek": "Şube", "altgrup": "Sipariş türü", "sonuc": "Memnuniyet"},
         "konu03": {"sayisal": "Memnuniyet puanı"},
         "konu04": {"grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"},
+        "konu05": {"grup": "Depo", "ikinci": "Teslim süresi (saat)"},
+        "konu06": {"olay_e": "Ödeme yöntemi", "olay_f": "Sipariş türü"},
     }
-    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10)):
+    for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
+                         ("konu06", 9)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
         assert any("dosya yükleyin" in item.value for item in app.info)
@@ -268,3 +272,34 @@ def test_own_data_labels_are_escaped_and_removal_clears_the_session() -> None:
     app.button(key=f"{topic}_kendi_kaldir").click().run()
     left = [str(key) for key in app.session_state.filtered_state if str(key).startswith(f"{topic}_kendi_")]
     assert not any(key.endswith(("_tablo", "_uygulama", "_yuklenen", "_ozet")) for key in left), left
+
+
+def _konu06_slider(app: AppTest, name: str):
+    return next(widget for widget in app.slider if str(widget.key).startswith(f"konu06_kendi_ayar_{name}_"))
+
+
+def test_konu06_sliders_set_the_die_and_the_team() -> None:
+    """Kaydırıcıların başlangıç değerleri alternatif örneğinkilerdir; n > N hatası kaydırıcıların altında görünür."""
+
+    from core.labs import kendi_veri as K
+    from core.labs.ornekler import VARIANTS
+
+    app = _run_app()
+    topic, mime = "konu06", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    app.radio(key="selected_topic").set_value(topic).run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    app.file_uploader(key=f"{topic}_kendi_dosya").upload("kafe.xlsx", K.sample_excel(VARIANTS[topic].custom.sample()),
+                                                         mime).run()
+    app.selectbox(key=f"{topic}_kendi_secim_olay_e").set_value("Mobil").run()
+    app.selectbox(key=f"{topic}_kendi_secim_olay_f").set_value("Paket").run()
+    assert [_konu06_slider(app, name).value for name in ("zar", "ekip", "secim")] == [8, 6, 3]
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    _konu06_slider(app, "secim").set_value(7).run()
+    assert any("büyük olamaz" in item.value for item in app.error)
+    _konu06_slider(app, "ekip").set_value(10).run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    app.segmented_control(key=f"{topic}_lab_step").set_value(3).run()
+    assert "Permütasyon listesi 720 satırı aşacağı" in "\n".join(item.value for item in app.info)
+    _konu06_slider(app, "zar").set_value(12).run()
+    app.segmented_control(key=f"{topic}_lab_step").set_value(1).run()
+    assert not app.exception and "12 yüzlü adil bir zar" in _markdown(app)

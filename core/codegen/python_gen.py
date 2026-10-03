@@ -12,6 +12,7 @@ from core.codegen.base import (
     PALETTE,
     REFERENCE_COLORS,
     Generator,
+    expected_text,
     flatten,
     functions_used,
     reference_words,
@@ -63,6 +64,7 @@ from core.labs.spec import (
     PmfWithDensity,
     ReadFile,
     CompleteCases,
+    Subset,
     Rectangles,
     ReplaceMax,
     RowSum,
@@ -163,6 +165,37 @@ _BOX_SUMMARY = [
     '        "aykiri_sayisi": float(((x < alt) | (x > ust)).sum()),',
     "    })",
 ]
+_BOX_SUMMARY_ROUNDED = [
+    "def kutu_ozeti(degerler, ondalik=None):",
+    '    """Kutu grafiği özeti: çeyrekler ders kuralıyla (yuzdelik); bıyıklar Q1 − 1,5·IQR ile Q3 + 1,5·IQR',
+    "    sınırlarının içindeki en uç gözlemlere uzanır; sınırların dışındakiler aykırı değer adayıdır. Sınırlar en çok",
+    '    ondalik basamaklıdır: yuvarlama kayan nokta gürültüsünü atar, tam sınırdaki gözlem aykırı sayılmaz."""',
+    "    x = np.sort(np.asarray(degerler, dtype=float))",
+    "    q1, medyan, q3 = yuzdelik(x, 25), yuzdelik(x, 50), yuzdelik(x, 75)",
+    "    iqr = q3 - q1",
+    "    alt, ust = q1 - 1.5 * iqr, q3 + 1.5 * iqr",
+    "    if ondalik is not None:",
+    "        alt, ust = np.round(alt, ondalik), np.round(ust, ondalik)",
+    "    icerde = x[(x >= alt) & (x <= ust)]",
+    "    return pd.Series({",
+    '        "en_kucuk": x[0], "q1": q1, "medyan": medyan, "q3": q3, "en_buyuk": x[-1], "iqr": iqr,',
+    '        "alt_sinir": alt, "ust_sinir": ust, "alt_biyik": icerde.min(), "ust_biyik": icerde.max(),',
+    '        "aykiri_sayisi": float(((x < alt) | (x > ust)).sum()),',
+    "    })",
+]
+"""Notlar dışındaki kaynaklarda (``BoxSummary.fence_decimals``): sınırlar sınıflamadan önce yuvarlanır."""
+
+
+def _box_digits(op) -> int:
+    """Kutu özetinin yazdırılan basamağı: 3; yuvarlanan sınırlar daha çok basamaklıysa o kadar."""
+
+    return 3 if op.fence_decimals is None else max(3, op.fence_decimals)
+
+
+def _fence_argument(op) -> str:
+    """``kutu_ozeti`` çağrısının ek argümanı: sınırların yuvarlanacağı basamak (``BoxSummary.fence_decimals``)."""
+
+    return "" if op.fence_decimals is None else f", {op.fence_decimals}"
 
 
 def _render(expression: E.Expr, dialect: E.Dialect) -> str:
@@ -320,8 +353,10 @@ class PythonGenerator(Generator):
             lines += _BOUNDARY_TEXT + ["", ""]
         if _needs_percentile(operations):
             lines += _PERCENTILE + ["", ""]
-        if any(isinstance(op, (BoxSummary, BoxPlot)) for op in flat):
-            lines += _BOX_SUMMARY + ["", ""]
+        boxes = [op for op in flat if isinstance(op, (BoxSummary, BoxPlot))]
+        if boxes:
+            rounded = any(op.fence_decimals is not None for op in boxes)
+            lines += (_BOX_SUMMARY_ROUNDED if rounded else _BOX_SUMMARY) + ["", ""]
         if any(isinstance(op, ReadFile) and _text_columns(op) for op in flat):
             lines += _CLEAN_TEXT + ["", ""]
         if any(isinstance(op, ReadFile) and any(kind == "kod" for _, _, kind in op.columns) for op in flat):
@@ -368,6 +403,8 @@ class PythonGenerator(Generator):
             return self._read_file(op)
         if isinstance(op, CompleteCases):
             return self._complete_cases(op)
+        if isinstance(op, Subset):
+            return self._subset_frame(op)
         if isinstance(op, Outcomes):
             return self._outcomes(op)
         if isinstance(op, Selections):
@@ -524,13 +561,14 @@ class PythonGenerator(Generator):
                 f"print({op.result}.round({op.decimals}))",
             ]
         if isinstance(op, BoxSummary):
-            items = [f'    {text(label)}: kutu_ozeti({frame}["{variable}"]),' for frame, variable, label in op.series]
+            items = [f'    {text(label)}: kutu_ozeti({frame}["{variable}"]{_fence_argument(op)}),'
+                     for frame, variable, label in op.series]
             return [
                 "# Beş sayı özeti, IQR, aykırı değer sınırları ve bıyık uçları",
                 f"{op.result} = pd.DataFrame({{",
                 *items,
                 "})",
-                f"print({op.result}.round(3))",
+                f"print({op.result}.round({_box_digits(op)}))",
             ]
         if isinstance(op, ClassTable):
             return self._class_table(op)
@@ -690,6 +728,14 @@ class PythonGenerator(Generator):
         lines += wrapped(f"{op.frame} = {op.source}.dropna(subset=[", [text(column) for column in op.columns],
                          "]).reset_index(drop=True)")
         return lines + [f"print(len({op.frame}))  # gözlem sayısı"]
+
+    @staticmethod
+    def _subset_frame(op: Subset) -> list[str]:
+        return [
+            f"# {op.comment}",
+            f"{op.frame} = {op.source}[{op.source}[{text(op.column)}] == {text(op.value)}].reset_index(drop=True)",
+            f"print(len({op.frame}))  # gözlem sayısı",
+        ]
 
     def _outcomes(self, op: Outcomes) -> list[str]:
         shown = f"print({op.frame})" if self._row_count(op) <= 12 else f"print({op.frame}.head())  # ilk beş sonuç"
@@ -981,7 +1027,7 @@ class PythonGenerator(Generator):
         ]
         if op.x_range is not None:
             low, high = (E.format_number(value) for value in op.x_range)
-            lines.append(f"ax.set_xlim({low}, {high})  # karşılaştırılan grafiklerde aynı yatay eksen")
+            lines.append(f"ax.set_xlim({low}, {high})  # {op.range_note}")
         return lines + self._axes(op.x_label, op.y_label, op.title, legend=bool(op.references))
 
     def _line(self, op: LineChart) -> list[str]:
@@ -1010,7 +1056,7 @@ class PythonGenerator(Generator):
             "]",
             "fig, ax = plt.subplots(figsize=(8, 1.6 + 1.1 * len(seriler)))",
             "for y, (etiket, degerler) in enumerate(seriler, start=1):",
-            "    k = kutu_ozeti(degerler)",
+            f"    k = kutu_ozeti(degerler{_fence_argument(op)})",
             f'    ax.add_patch(plt.Rectangle((k["q1"], y - 0.25), k["iqr"], 0.5, facecolor="{PALETTE[0]}33",',
             f'                               edgecolor="{PALETTE[0]}", linewidth=2))',
             f'    ax.plot([k["medyan"], k["medyan"]], [y - 0.25, y + 0.25], color="{PALETTE[1]}", linewidth=3)',
@@ -1351,7 +1397,7 @@ class PythonGenerator(Generator):
     def check_lines(self, checks: tuple[Check, ...]) -> list[str]:
         lines = [f'print("{reference_words(self.spec)[0]}")']
         for check in checks:
-            expected = f"{check.expected:.{check.decimals}f}"
+            expected = expected_text(check.expected, check.decimals, self.spec.source)
             lines.append(
                 f'kontrol_et("{_quote(check.label)}", {self.target(check.target)}, {expected}, {check.decimals})'
             )

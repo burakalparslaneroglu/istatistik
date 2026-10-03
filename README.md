@@ -23,8 +23,8 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 | 02 | Kategorik Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı + ek veri kaynakları | 12 | 56 | 3 | 24 |
 | 03 | Nicel Verilerin Tablo ve Grafiklerle Özetlenmesi | Yeni yapı + ek veri kaynakları | 11 | 85 | 3 | 24 |
 | 04 | Merkezi Eğilim ve Konum Ölçüleri | Yeni yapı + ek veri kaynakları | 10 | 32 | 3 | 24 |
-| 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı | 12 | 40 | 3 | 24 |
-| 06 | Olasılığın Temelleri | Yeni yapı | 9 | 35 | 3 | 24 |
+| 05 | Değişkenlik, Dağılımın Şekli ve İki Değişken Arasındaki İlişki | Yeni yapı + ek veri kaynakları | 12 | 40 | 3 | 24 |
+| 06 | Olasılığın Temelleri | Yeni yapı + ek veri kaynakları | 9 | 35 | 3 | 24 |
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı | 10 | 61 | 3 | 24 |
 | 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı | 12 | 65 | 3 | 24 |
 | 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı | 8 | 39 | 3 | 24 |
@@ -35,9 +35,12 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
 yolun aynısını verir.
 
-Ek veri kaynakları (alternatif örnek ve kendi verini yükle) şu an Konu 1–4'te vardır. Konu 3'te yüklenen
+Ek veri kaynakları (alternatif örnek ve kendi verini yükle) şu an Konu 1–6'da vardır. Konu 3'te yüklenen
 veride sınıf sayısı kaydırıcıyla seçilir (öneri ⌈1 + log₂ n⌉); Konu 4'te ağırlıklı ortalama için grup sütunu,
-geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır.
+geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır. Konu 5'te iki grubun yayılımı için tam iki
+kategorili bir grup sütunu, değişim katsayılarının karşılaştırması, kovaryans ve korelasyon için ikinci bir sayısal
+sütun isteğe bağlıdır. Konu 6'da iki kategorik sütunda seçilen kategoriler E ve F olaylarını kurar; zarın yüz sayısı,
+ekip büyüklüğü ve seçilen kişi sayısı kaydırıcılarla seçilir.
 
 ## İki dilde kod
 
@@ -50,7 +53,8 @@ sonucun hangi anlamda aynı olduğu yazılır:
 
 İndirilen Uygulama dosyaları bütün adımları çalıştırır ve sonunda sonuçları karşılaştırır (`OK` / `HATA`):
 notlardaki örnekte ders notlarındaki basılı sayılarla, alternatif örnekte ve yüklenen veride uygulamanın aynı
-veriyle gösterdiği sayılarla. Yüklenen veriyle üretilen betik o dosyayı okur; dosya betikle aynı klasörde olmalıdır.
+veriyle gösterdiği sayılarla (kontrol satırında uygulamanın değeri gösterilen basamaktan iki basamak fazlasıyla
+yazılır). Yüklenen veriyle üretilen betik o dosyayı okur; dosya betikle aynı klasörde olmalıdır.
 Gerekli paketler:
 
 - Python 3.12: `pandas`, `numpy`, `matplotlib`. Olasılık dağılımı fonksiyonu (binom, Poisson, hipergeometrik,

@@ -36,6 +36,8 @@ SAMPLE_ROLES = {
                 "sonuc": "Memnuniyet"}, (), {"sonuc": "Memnun"}),
     "konu03": ({"sayisal": "Memnuniyet puanı"}, (), {}),
     "konu04": ({"sayisal": "Aylık kira (bin TL)", "grup": "Oda sayısı", "buyume": "Yıllık kira artışı (%)"}, (), {}),
+    "konu05": ({"sayisal": "Teslimat mesafesi (km)", "grup": "Depo", "ikinci": "Teslim süresi (saat)"}, (), {}),
+    "konu06": ({"olay_e": "Ödeme yöntemi", "olay_f": "Sipariş türü"}, (), {"olay_e": "Mobil", "olay_f": "Paket"}),
 }
 
 
@@ -131,6 +133,48 @@ def test_notes_scripts_keep_their_wording_and_names() -> None:
         assert "ders notlarındaki basılı değerlerle karşılaştırılır" in script
         assert "(notlar: " in script and "(uygulama: " not in script
         assert script_filename(spec, "R") == f"ikt217_{topic}_uygulama.R"
+
+
+NOTES_MD5 = {
+    "konu01": "01a3da3a83c642ce86d77675eec12dd7",
+    "konu02": "9fb81e24c8eef836b206c820a29d2b9b",
+    "konu03": "a1cf5afe031a40936d07a6830491c37c",
+    "konu04": "43636012f083f849f5f1a53927af1608",
+    "konu05": "5c11318c38bca5c1e807526e0636f42b",
+    "konu06": "fa5762eefee1d8b1ca3fe1916dba2909",
+    "konu07": "f956dcc9ce8073ba718c0b465696d3d0",
+    "konu08": "c73e1e37a1db8959ea115cabfb96f6e3",
+    "konu09": "c71c28b6f9b0d8e12a4d2eaea2f0ed8d",
+    "konu10": "10d21d54551fb4335ec49b64517d17c5",
+    "konu11": "4f3bcce5cc433122a5b3cd09b511f655",
+    "konu12": "2b97e321902ff3ce1226edefb9e3bb90",
+}
+"""Notlardaki örneklerin ve Sezgi deneylerinin üretilen kodu (bütün betik, her adımın kodu, iki dil): md5 özeti.
+Ortak koddaki (ör. kod üreticileri) bir değişiklik notların çıktısını değiştirmemelidir. Notlar bilerek
+düzeltildiğinde özet yeniden hesaplanır (``_notes_md5``)."""
+
+
+def _notes_md5(key: str) -> str:
+    import hashlib
+    import importlib
+
+    from core.codegen.base import generator
+
+    spec = get_lab(key)
+    parts = []
+    for language in LANGUAGES:
+        parts.append(render_script(spec, language))
+        parts += [render_step(spec, step.number, language) for step in spec.steps]
+    module = importlib.import_module(f"core.labs.sezgi_{key}")
+    for experiment in getattr(module, f"{key.upper()}_EXPERIMENTS"):
+        parameters = {item.key: item.default for item in experiment.parameters}
+        parts += [generator(experiment.spec(parameters), language).script() for language in LANGUAGES]
+    return hashlib.md5("\n\u0000\n".join(parts).encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("key", sorted(NOTES_MD5))
+def test_notes_outputs_are_unchanged(key: str) -> None:
+    assert _notes_md5(key) == NOTES_MD5[key]
 
 
 # --- Kendi verini yükle: örnek dosya -------------------------------------------------
@@ -623,6 +667,56 @@ HARD_DATA = {
                          {"sayisal": "x"}, {}, ",", "."),
     "konu04-buyuk-cift-n": ("konu04", pd.DataFrame({"Süre": np.round(np.random.default_rng(8).gamma(2, 9, 320), 1)}),
                             {"sayisal": "Süre"}, {}, ",", "."),
+    "konu05-bos-grup-ikinci": ("konu05", pd.DataFrame({
+        "Gelir": [12.5, 14.0, 13.25, 18.0, 11.75, 15.5, 40.0, 13.0, None, 16.25],
+        "Şube": ["A", "B", None, "A", "B", "A", "B", "A", "B", "B"],
+        "Harcama": [3.1, None, 2.8, 4.0, 2.5, 3.6, 6.9, 3.0, 3.3, None],
+    }), {"sayisal": "Gelir", "grup": "Şube", "ikinci": "Harcama"}, {}, ";", ","),
+    "konu05-chebyshev-siniri": ("konu05", pd.DataFrame({"x": [1.0, 0.6, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]}),
+                                {"sayisal": "x"}, {}, ",", "."),
+    "konu05-sinirdaki-gozlem": ("konu05", pd.DataFrame({"x": [1.2, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.0, 3.6],
+                                                        "y": [5, -2, 3, 1, 0, -4, 2, 6, -1, 3, 4]}),
+                                {"sayisal": "x", "ikinci": "y"}, {}, "\t", ","),
+    "konu05-negatif-buyuk-n": ("konu05", pd.DataFrame({
+        "Getiri": np.round(np.random.default_rng(9).normal(0.4, 2.5, 360), 2),
+        "Grup": np.random.default_rng(10).choice(["Fon A", "Fon B"], 360),
+    }), {"sayisal": "Getiri", "grup": "Grup"}, {}, ",", "."),
+    "konu05-buyuk-degerler": ("konu05", pd.DataFrame({"x": [123456789012.5 + step * 1000.25 for step in range(40)]}),
+                              {"sayisal": "x"}, {}, ",", "."),
+    "konu05-chebyshev-buyuk-deger": ("konu05", pd.DataFrame({"Tutar": [86349475.7, 86349463.98] + [86349469.84] * 17}),
+                                     {"sayisal": "Tutar"}, {}, ";", ","),
+    "konu05-sinirdaki-gozlem-aykiri-degil": ("konu05", pd.DataFrame({"Süre": [0.05, 0.33, 0.4, 0.58, 0.59, 1.91]}),
+                                             {"sayisal": "Süre"}, {}, ";", ","),
+    "konu05-tam-dogrusal-ve-sabit": ("konu05", pd.DataFrame({
+        "x": [15, 41, 5, 30, 36, 9, 3, 14, 33, 28, 8, 22, 33],
+        "y": [-16, -42, -6, -31, -37, -10, -4, -15, -34, -29, -9, -23, -34],
+        "Sabit": [2.5] * 13,
+    }), {"sayisal": "x", "ikinci": "y"}, {}, ",", "."),
+    "konu05-sabit-y": ("konu05", pd.DataFrame({"x": [1, 2, 3, 4, 5.5, 7], "y": [2.5] * 6}),
+                       {"sayisal": "x", "ikinci": "y"}, {}, "\t", ","),
+    # Kareli sapma yarım noktaya çok yakın (…970,5004): beklenen değer iki basamak fazlasıyla yazılmasa R düşerdi.
+    "konu05-ciro-yarim-nokta": ("konu05", pd.DataFrame({"Ciro": [1200144548.63, 1200145870.07, 1200076418.91,
+                                                                 1200022653.63, 1200132337.88, 1200109793.08]}),
+                                {"sayisal": "Ciro"}, {}, ";", ","),
+    # Kareli sapmanın tam kısmı bile iki dilde ayrılabilir: o kontrol atlanır, değer gösterilir.
+    "konu05-cok-buyuk-dar": ("konu05", pd.DataFrame({"x": [150000153920.88, 150000094822.75, 150000184223.36,
+                                                           150000097995.95, 150000051684.85, 150000028393.93]}),
+                             {"sayisal": "x"}, {}, ",", "."),
+    # IQR = 299999,875 iki basamakla tam yarım: bir basamak daha az yazılır.
+    "konu05-iqr-yarim": ("konu05", pd.DataFrame({"x": [999999999000, 1000000000000, 1000000000000.5, 1000000001000,
+                                                       1000000002000, 1000000300000, 1000000300000,
+                                                       1000000300001]}), {"sayisal": "x"}, {}, ",", "."),
+    # R altı ondalıklı 0,718528'i son ikili basamakta farklı okuyabilir; tam sınırdaki gözlem iki dilde de içeride.
+    "konu05-alti-ondalik-sinir": ("konu05", pd.DataFrame({"x": [0.1, 0.3, 0.35, 0.4, 0.45, 0.4674112, 0.718528]}),
+                                  {"sayisal": "x"}, {}, ",", "."),
+    "konu06-kodlar-bos": ("konu06", pd.DataFrame({
+        "Kod": [1, 2, 3, 1, 2, 2, 1, 3, 3, 1, None, 2],
+        "Durum": ["Evet", "Hayır", "Evet", "Hayır", "Evet", "Hayır", "Evet", "Hayır", "Evet", None, "Evet", "Hayır"],
+    }), {"olay_e": "Kod", "olay_f": "Durum"}, {"zar": 20, "ekip": 10, "secim": 4}, ";", ","),
+    "konu06-ayrik": ("konu06", pd.DataFrame({
+        "Teslim": ["Geç", "Geç", "Zamanında", "Zamanında", "Zamanında", "Geç", "Zamanında"],
+        "Hasar": ["Yok", "Yok", "Var", "Var", "Yok", "Yok", "Yok"],
+    }), {"olay_e": "Teslim", "olay_f": "Hasar"}, {"zar": 5, "ekip": 7, "secim": 7}, ",", "."),
 }
 
 

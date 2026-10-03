@@ -169,6 +169,18 @@ class CompleteCases:
 
 
 @dataclass(frozen=True)
+class Subset:
+    """``source`` çerçevesinde ``column`` değeri ``value`` olan satırlar: ``frame`` adlı yeni çerçeve (ör. iki grubun
+    ayrı nokta grafikleri, istatistikleri ve kutu grafikleri). Değeri boş olan satırlar hiçbir gruba girmez."""
+
+    frame: str
+    source: str
+    column: str
+    value: object
+    comment: str
+
+
+@dataclass(frozen=True)
 class VariableTypes:
     """Değişkenlerin notlardaki istatistiksel türü ve yazılımın onları saklama biçimi.
 
@@ -553,6 +565,10 @@ class BoxSummary:
 
     series: tuple[tuple[str, str, str], ...]
     result: str
+    fence_decimals: int | None = None
+    """Verilirse 1,5·IQR sınırları gözlemler sınıflanmadan önce bu ondalık basamağa yuvarlanır. Ders kuralıyla
+    sınırlar en çok verinin basamağı + 3 ondalık basamaklıdır; yuvarlama kayan nokta gürültüsünü atar, tam sınırdaki
+    gözlem aykırı değer sayılmaz (notlarda kullanılmaz)."""
 
 
 @dataclass(frozen=True)
@@ -739,6 +755,8 @@ class BoxPlot:
     x_label: str
     y_label: str
     title: str
+    fence_decimals: int | None = None
+    """Bkz. ``BoxSummary.fence_decimals``."""
 
 
 @dataclass(frozen=True)
@@ -800,6 +818,12 @@ class DotPlot:
     y_label: str = "Aynı değerdeki gözlem sayısı"
     references: tuple[tuple[str, str], ...] = ()
     x_range: tuple[float, float] | None = None
+    reference_decimals: tuple[int, ...] = ()
+    """Başvuru değerlerinin grafik açıklamasındaki basamağı (sırayla); boşsa 2 (notlar). Notlar dışındaki kaynaklarda
+    skaleri hesaplayan işlemin basamağıdır (``ornek.with_app_values``): açıklama metrikle aynı sayıyı gösterir."""
+    range_note: str = "karşılaştırılan grafiklerde aynı yatay eksen"
+    """``x_range`` verilmişse koddaki açıklama: neden sabit bir yatay eksen kullanıldığı (ör. sınır çizgileri görünsün
+    diye)."""
 
 
 @dataclass(frozen=True)
@@ -935,6 +959,7 @@ Operation = Union[
     FromCounts,
     ReadFile,
     CompleteCases,
+    Subset,
     Outcomes,
     Selections,
     VariableTypes,

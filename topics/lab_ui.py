@@ -51,6 +51,7 @@ from core.labs.spec import (
     ShowFrame,
     Statistic,
     StemLeaf,
+    Subset,
     VariableTypes,
 )
 from topics.kendi_veri_ui import render_custom
@@ -128,6 +129,16 @@ def _value_text(value: float) -> str:
     return ondalik(kesin(value), _places(value))
 
 
+def _signless_zero(text: str) -> str:
+    """İşaretli sıfır ("−0,00"; kayan nokta gürültüsü, ör. sapmaların toplamı −1e-15) işaretsiz yazılır. Yalnız notlar
+    dışındaki kaynaklarda kullanılır; notların ekranı değişmez."""
+
+    bare = text.lstrip("%")
+    if bare.startswith("−") and set(bare[1:]) <= set("0,"):
+        return text.replace("−", "", 1)
+    return text
+
+
 def _index_text(item) -> str:
     """Satır adı: ondalık sayılar Türkçe yazımla (1,5; −1); ondalıksız değerde ",0" yazılmaz."""
 
@@ -154,8 +165,11 @@ def _formatted(table: pd.DataFrame, formats: dict[str, Callable[[float], str]], 
     return shown.rename_axis(index_label).reset_index()
 
 
-def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda name: name) -> pd.DataFrame:
-    """Bir sonuç tablosunun ekranda gösterilecek biçimi."""
+def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda name: name,
+                  small: bool = False) -> pd.DataFrame:
+    """Bir sonuç tablosunun ekranda gösterilecek biçimi. ``small`` (notlar dışındaki kaynaklar): kutu özetinin
+    değerleri kısa ondalık yazımlarıyla tam gösterilir (11,625; notlarda tam sayı ya da iki basamak) ve sütunları
+    serilerin etiketleridir; skaler tablosunda işaretli sıfır ("−0,000") işaretsiz yazılır."""
 
     if isinstance(op, FrequencyTable):
         formats = {"frekans": _count, "goreli": lambda v: tr_number(v, 3), "yuzde": lambda v: tr_number(v, 1, True)}
@@ -186,7 +200,10 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
     if isinstance(op, StemLeaf):
         return _formatted(table, {"yaprak_sayisi": _count}, "Gövde", label)
     if isinstance(op, ScalarTable):
-        return pd.DataFrame({"Büyüklük": table.index, "Değer": [tr_number(v, op.decimals) for v in table["deger"]]})
+        shown = [tr_number(v, op.decimals) for v in table["deger"]]
+        if small:
+            shown = [_signless_zero(item) for item in shown]
+        return pd.DataFrame({"Büyüklük": table.index, "Değer": shown})
     if isinstance(op, GroupSummary):
         formats = {name: _count if stat == "count" else (lambda v: tr_number(v, op.decimals))
                    for name, _, stat in op.columns}
@@ -197,8 +214,9 @@ def display_table(op, table: pd.DataFrame, label: Callable[[str], str] = lambda 
         return _formatted(table, formats, _COLUMN_LABELS.get(index, label(index)) or "Kategori", label)
     if isinstance(op, BoxSummary):
         shown = table.rename(index=_BOX_LABELS)
-        formats = {str(column): _boundary for column in shown.columns}
-        return _formatted(shown, formats, "Özet", label)
+        formats = {str(column): _value_text if small else _boundary for column in shown.columns}
+        # Notlar dışında sütunlar serilerin etiketidir (ör. grup adları); koddaki sütun adı sanılıp yeniden adlanmaz.
+        return _formatted(shown, formats, "Özet", label, rename=not small)
     if isinstance(op, VariableTypes):
         shown = table.reset_index()
         shown.insert(0, "Değişken", [label(name) for name in shown["degisken"]])
@@ -308,6 +326,9 @@ def _frame(frame: pd.DataFrame, label: Callable[[str], str], small: bool = False
             shown[column] = shown[column].round().astype(int)
             if (shown[column] < 0).any():  # tipografik eksi: −10
                 formats[column] = lambda value: tr_number(value, 0)
+        elif small:
+            formats[column] = lambda value, decimals=_decimals(shown[column], small): _signless_zero(
+                tr_number(value, decimals))
         else:
             formats[column] = lambda value, decimals=_decimals(shown[column], small): tr_number(value, decimals)
     rename = {column: _frame_label(str(column), label) for column in shown.columns}
@@ -396,7 +417,8 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
     pending: list[tuple[str, str]] = []
     for index, op in enumerate(operations):
         if isinstance(op, _METRICS):
-            pending.extend((escape(title), value) for title, value in _metrics(op, state))
+            pending.extend((escape(title), _signless_zero(value) if small else value)
+                           for title, value in _metrics(op, state))
             continue
         if pending:
             _show_metrics(pending)
@@ -424,8 +446,8 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             show_table(_frame(frame, label, small))
             dropped = f" Temel sütunlarda boş hücre bulunan {_count(op.dropped)} satır çıkarıldı." if op.dropped else ""
             st.caption(f"Analizde {_count(len(frame))} gözlem var.{dropped}")
-        elif isinstance(op, CompleteCases):
-            st.caption(f"{op.comment}: {_count(len(state.frames[op.frame]))} gözlem.")
+        elif isinstance(op, (CompleteCases, Subset)):
+            st.caption(f"{escape(op.comment)}: {_count(len(state.frames[op.frame]))} gözlem.")
         elif isinstance(op, ReplaceMax):
             before = float(state.frames[op.source][op.variable].max())
             after = float(state.frames[op.frame][op.variable].max())
@@ -451,7 +473,7 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             continue  # grup özeti aynı adımda türetilen sütunlarıyla birlikte bir kez gösterilir
         elif isinstance(op, (VariableTypes, FrequencyTable, ScalarTable, GroupSummary, ClassTable, StemLeaf,
                              JoinColumns, BoxSummary)):
-            show_table(display_table(op, state.tables[op.result], label))
+            show_table(display_table(op, state.tables[op.result], label, small))
         if isinstance(op, PieChart):
             show_figure(figure_for(op, state, label), key=f"{key_prefix}_grafik_{index}")
             show_table(display_table(op, state.tables[op.result], label))
