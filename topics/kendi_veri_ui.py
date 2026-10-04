@@ -265,6 +265,21 @@ def _current_file(topic_key: str, uploaded) -> tuple[str, bytes] | None:
     return st.session_state.get(_file_key(topic_key))
 
 
+def _group_columns(count: int) -> list:
+    """Parametre gruplarının sütunları: en çok üç grup yan yana; daha çok grup satırlara olabildiğince eşit bölünür
+    (4 → 2 + 2, 5 → 3 + 2, 6 → 3 + 3, 7 → 3 + 2 + 2). Bütün sütunlar aynı genişliktedir: her satır ilk satırın
+    sütun sayısıyla açılır, fazlası boş kalır."""
+
+    if count <= 0:
+        return []
+    rows = -(-count // 3)
+    sizes = [count // rows + (1 if index < count % rows else 0) for index in range(rows)]
+    columns: list = []
+    for size in sizes:
+        columns.extend(st.columns(sizes[0])[:size])
+    return columns
+
+
 def render_params(topic_key: str, params: ParamLab) -> LabSpec | None:
     """Dosyasız konularda (Konu 9–12) "Kendi değerlerini gir" paneli: her parametre bir sayı girişidir. Geçerli
     değerlerle kurulan uygulamayı döndürür (yoksa ``None``); değerler kaynak değişse de oturumda korunur."""
@@ -273,7 +288,7 @@ def render_params(topic_key: str, params: ParamLab) -> LabSpec | None:
     groups = params.groups or ("",)
     values: dict[str, int | float] = {}
     with st.container(border=True):
-        for column, group in zip(st.columns(len(groups)), groups):
+        for column, group in zip(_group_columns(len(groups)), groups):
             if group:
                 column.markdown(f"**{group}**")
             for parameter in params.parameters:

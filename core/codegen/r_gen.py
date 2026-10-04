@@ -16,6 +16,7 @@ from core.codegen.base import (
     Generator,
     expected_text,
     flatten,
+    functions_used,
     reference_words,
     text,
     uses_charts,
@@ -91,7 +92,8 @@ _STAT = {"sum": "sum", "mean": "mean", "median": "median", "prod": "prod", "min"
 """R'nin ``var`` ve ``sd`` fonksiyonları örneklem ölçüleridir (payda n − 1)."""
 _FUNCTIONS = {
     "log": "log", "exp": "exp", "sqrt": "sqrt", "abs": "abs", "maximum": "pmax", "minimum": "pmin",
-    "round": "round", "roundto": "round", "floor": "floor", "normcdf": "pnorm", "normpdf": "dnorm",
+    "round": "round", "roundto": "round", "yuvarla": "yuvarla", "floor": "floor", "normcdf": "pnorm",
+    "normpdf": "dnorm",
     "norminv": "qnorm",
     "cumprod": "cumprod", "cummean": "cumsum({0}) / seq_along({0})", "seq": "seq_along({0})",
     "factorial": "factorial({0})", "comb": "choose({0}, {1})", "perm": "factorial({0}) / factorial({0} - {1})",
@@ -100,6 +102,16 @@ _FUNCTIONS = {
     **{name: f"as.numeric({{0}} {symbol} {{1}})" for name, symbol in E.COMPARISONS.items()},
 }
 _REFERENCE_STYLES = tuple(zip(REFERENCE_COLORS, ("2", "3", "4")))
+_ROUND_HALF = [
+    "# Ders kuralıyla yuvarlama: tam yarım sıfırdan uzağa gider (0,835 -> 0,84; -0,835 -> -0,84).",
+    "# round() tam yarımı farklı yuvarlayabilir (0,825 -> 0,82). 1e-7 payı kayan nokta yazımındaki",
+    "# küçük farkı (0,8349999...) giderir; sondaki + 0 sıfırı işaretsiz yapar (-0.00 yazılmaz).",
+    "yuvarla <- function(deger, basamak) {",
+    "  carpan <- 10^basamak",
+    "  sign(deger) * floor(abs(deger) * carpan + 0.5 + 1e-7) / carpan + 0",
+    "}",
+]
+"""Tablo kuralı (z iki, Φ dört ondalık) notlar dışındaki kaynaklarda bu fonksiyonla uygulanır (``E.yuvarla``)."""
 _SCIPEN = [
     "# Büyük ve küçük sayılar (100000, 0.0001) üstel gösterimle (1e+05, 1e-04) yazılmasın: tablo satır ve sütun",
     "# adları sayının kendisi olur ve değerler bu adlarla seçilir.",
@@ -383,6 +395,8 @@ class RGenerator(Generator):
         if boxes:
             rounded = any(op.fence_decimals is not None for op in flat if isinstance(op, (BoxSummary, BoxPlot)))
             lines += (_BOX_SUMMARY_ROUNDED if rounded else _BOX_SUMMARY) + [""]
+        if "yuvarla" in functions_used(operations):
+            lines += _ROUND_HALF + [""]
         if any(isinstance(op, Selections) and op.ordered for op in flat):
             lines += _ORDERED_SELECTIONS + [""]
         if any(isinstance(op, TreeDiagram) for op in flat):

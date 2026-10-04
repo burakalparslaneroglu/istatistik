@@ -29,25 +29,30 @@ Konular ders notlarının bölümleridir. Her konuda üç sekme vardır:
 | 07 | Koşullu Olasılık, Bağımsızlık ve Bayes Teoremi | Yeni yapı + ek veri kaynakları | 10 | 61 | 3 | 24 |
 | 08 | Rassal Değişkenler ve Kesikli Olasılık Dağılımları | Yeni yapı + ek veri kaynakları | 12 | 65 | 3 | 24 |
 | 09 | Binom, Poisson ve Hipergeometrik Dağılımlar | Yeni yapı + ek veri kaynakları | 8 | 39 | 3 | 24 |
-| 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Yeni yapı | 7 | 30 | 3 | 24 |
-| 11 | Normal Olasılıklar ve Üstel Dağılım | Yeni yapı | 10 | 46 | 3 | 24 |
-| 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Yeni yapı | 6 | 19 | 3 | 24 |
+| 10 | Sürekli Rassal Değişkenler, Tek-Düze ve Normal Dağılım | Yeni yapı + ek veri kaynakları | 7 | 30 | 3 | 24 |
+| 11 | Normal Olasılıklar ve Üstel Dağılım | Yeni yapı + ek veri kaynakları | 10 | 46 | 3 | 24 |
+| 12 | Örnekleme, Nokta Tahmini ve Örnekleme Dağılımları | Yeni yapı + ek veri kaynakları | 6 | 19 | 3 | 24 |
 
 Konu 12'nin Sezgi Deney 1'i notlardaki Şekil 12.13'ü üretir (tohum 217); varsayılan ayarlarda Python kodu şekildeki
 yolun aynısını verir.
 
-Ek veri kaynakları (alternatif örnek ve kendi verini yükle ya da kendi değerlerini gir) şu an Konu 1–9'da vardır. Konu 3'te yüklenen
-veride sınıf sayısı kaydırıcıyla seçilir (öneri ⌈1 + log₂ n⌉); Konu 4'te ağırlıklı ortalama için grup sütunu,
-geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır. Konu 5'te iki grubun yayılımı için tam iki
-kategorili bir grup sütunu, değişim katsayılarının karşılaştırması, kovaryans ve korelasyon için ikinci bir sayısal
-sütun isteğe bağlıdır. Konu 6'da iki kategorik sütunda seçilen kategoriler E ve F olaylarını kurar; zarın yüz sayısı,
-ekip büyüklüğü ve seçilen kişi sayısı kaydırıcılarla seçilir. Konu 7'de koşul ve sonuç sütunlarında seçilen
-kategoriler M ve S olaylarıdır; çapraz tablo, koşullu olasılık, bağımsızlık, olasılık ağacı ve Bayes hesabı bu
-veriden, alarm örneğinin temel oranı, yakalama ve yanlış alarm yüzdeleri kaydırıcılarla kurulur. Konu 8'de kesikli
-sayısal sütunun (en çok 20 farklı değer) göreli frekansları olasılık fonksiyonudur; isteğe bağlı ikinci kesikli
-sütunla ortak dağılım, kovaryans ve bağımsızlık adımları kurulur, kâr fonksiyonunun birim katkısı ve sabit maliyeti
-kaydırıcıdır. Konu 9'da dosya yoktur: binomun n, p ve x değerleri, Poisson için saatlik ortalama, aralık ve x,
-hipergeometrik için N, r, n ve x sayı girişleriyle verilir.
+Ek veri kaynakları (alternatif örnek ve kendi verini yükle ya da kendi değerlerini gir) bütün konularda (Konu 1–12)
+vardır. Konu 3'te yüklenen veride sınıf sayısı kaydırıcıyla seçilir (öneri ⌈1 + log₂ n⌉); Konu 4'te ağırlıklı
+ortalama için grup sütunu, geometrik ortalama için dönemlik yüzde değişim sütunu isteğe bağlıdır. Konu 5'te iki
+grubun yayılımı için tam iki kategorili bir grup sütunu, değişim katsayılarının karşılaştırması, kovaryans ve
+korelasyon için ikinci bir sayısal sütun isteğe bağlıdır. Konu 6'da iki kategorik sütunda seçilen kategoriler E ve F
+olaylarını kurar; zarın yüz sayısı, ekip büyüklüğü ve seçilen kişi sayısı kaydırıcılarla seçilir. Konu 7'de koşul ve
+sonuç sütunlarında seçilen kategoriler M ve S olaylarıdır; çapraz tablo, koşullu olasılık, bağımsızlık, olasılık
+ağacı ve Bayes hesabı bu veriden, alarm örneğinin temel oranı, yakalama ve yanlış alarm yüzdeleri kaydırıcılarla
+kurulur. Konu 8'de kesikli sayısal sütunun (en çok 20 farklı değer) göreli frekansları olasılık fonksiyonudur;
+isteğe bağlı ikinci kesikli sütunla ortak dağılım, kovaryans ve bağımsızlık adımları kurulur, kâr fonksiyonunun
+birim katkısı ve sabit maliyeti kaydırıcıdır. Konu 9'da dosya yoktur: binomun n, p ve x değerleri, Poisson için
+saatlik ortalama, aralık ve x, hipergeometrik için N, r, n ve x sayı girişleriyle verilir. Konu 10–12'de de dosya
+yoktur; panel değerleri notlardaki örneklere göre gruplar, bir örnek birden çok adımı kurabilir (Konu 10: 4 grup, 21
+değer; Konu 11: 5 grup, 22 değer; Konu 12: 6 grup, 21 değer). Konu 10'da alanlar Φ tablosu kullanılmadan
+dikdörtgenlerle bulunur. Konu 11–12'de tablo kuralı ders kuralıyla uygulanır: z iki, Φ dört, Φ⁻¹ üç ondalık basamağa
+yuvarlanır ve tam yarım sıfırdan uzağa gider (üretilen koddaki `yuvarla()` fonksiyonu); tablo sonucu ile
+yuvarlamasız sonuç birlikte gösterilir.
 
 ## İki dilde kod
 

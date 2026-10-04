@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
@@ -97,7 +98,8 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
     app = _run_app()
     assert app.segmented_control(key="konu01_lab_kaynak").value == "notlar"
     for topic, steps in (("konu01", 5), ("konu02", 12), ("konu03", 11), ("konu04", 10), ("konu05", 12),
-                         ("konu06", 9), ("konu07", 10), ("konu08", 12), ("konu09", 8)):
+                         ("konu06", 9), ("konu07", 10), ("konu08", 12), ("konu09", 8), ("konu10", 7), ("konu11", 10),
+                         ("konu12", 6)):
         app.radio(key="selected_topic").set_value(topic).run()
         app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
         assert "Kurgusal veri" in _markdown(app)
@@ -107,8 +109,6 @@ def test_lab_source_selector_offers_the_alternative_example() -> None:
                 app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
                 assert not app.exception, (topic, language, number)
                 assert any(item.value.startswith(f"Adım {number}:") for item in app.subheader)
-    app.radio(key="selected_topic").set_value("konu10").run()
-    assert not any(widget.key == "konu10_lab_kaynak" for widget in app.segmented_control)
 
 
 def test_own_data_upload_runs_every_step() -> None:
@@ -305,6 +305,49 @@ def test_konu06_sliders_set_the_die_and_the_team() -> None:
     _konu06_slider(app, "zar").set_value(12).run()
     app.segmented_control(key=f"{topic}_lab_step").set_value(1).run()
     assert not app.exception and "12 yüzlü adil bir zar" in _markdown(app)
+
+
+@pytest.mark.parametrize("topic, steps, invalid, message, change, phrase", [
+    ("konu10", 7, ("x2", 240.0), "x₂'den", ("w", 2.0), "Genişlik 1'den büyük"),
+    ("konu11", 10, ("k", 70), "n'den", ("z", -1.37), "simetriyle bulunur"),
+    ("konu12", 6, ("n5", 2000), "N'den", ("n3", 16), "n = 16 < 30"),
+])
+def test_konu10_12_own_values_panels(topic, steps, invalid, message, change, phrase) -> None:
+    """Konu 10–12'de "Kendi değerlerini gir": başlangıç değerleri alternatif örneğinkilerdir, bütün adımlar çalışır,
+    geçersiz değerin iletisi panelin altında görünür, değer değişince metin değişir ve değer kaynak değişse de
+    korunur."""
+
+    from core.labs.ornekler import VARIANTS
+
+    app = _run_app()
+    app.radio(key="selected_topic").set_value(topic).run()
+    plain = '"exponentformat":"none"'  # notlar dışında eksenlerde SI ön eki (20µ) yok; notların grafikleri değişmez
+    assert not any(plain in chart.proto.spec for chart in app.get("plotly_chart"))
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    assert any(plain in chart.proto.spec for chart in app.get("plotly_chart"))
+    for parameter in VARIANTS[topic].params.parameters:
+        shown_value = app.number_input(key=f"{topic}_kendi_param_{parameter.key}").value
+        assert shown_value == pytest.approx(parameter.default), parameter.key
+    for number in range(1, steps + 1):
+        app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
+        assert not app.exception, number
+    key, value = invalid
+    original = app.number_input(key=f"{topic}_kendi_param_{key}").value
+    app.number_input(key=f"{topic}_kendi_param_{key}").set_value(value).run()
+    assert any(message in item.value for item in app.error), [item.value for item in app.error]
+    app.number_input(key=f"{topic}_kendi_param_{key}").set_value(original).run()
+    key, value = change
+    app.number_input(key=f"{topic}_kendi_param_{key}").set_value(value).run()
+    assert not app.exception and not app.error, [item.value for item in app.error]
+    shown = "\n".join([_markdown(app), *(item.value for item in app.info)])
+    for number in range(1, steps + 1):
+        app.segmented_control(key=f"{topic}_lab_step").set_value(number).run()
+        shown += "\n".join([_markdown(app), *(item.value for item in app.info)])
+    assert phrase in shown
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("alternatif").run()
+    app.segmented_control(key=f"{topic}_lab_kaynak").set_value("kendi").run()
+    assert app.number_input(key=f"{topic}_kendi_param_{key}").value == pytest.approx(value)
 
 
 def _konu09_input(app: AppTest, name: str):

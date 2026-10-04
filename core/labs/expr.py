@@ -57,12 +57,13 @@ DISTRIBUTION_FUNCTIONS = ("dbinom", "pbinom", "dpois", "ppois", "dhyper", "phype
 """Olasılık fonksiyonları ve birikimli olasılıklar (vektör üzerinde de çalışır): Python'da ``scipy.stats``, R'de
 ``dbinom``/``pbinom``, ``dpois``/``ppois``, ``dhyper``/``phyper`` ve ``dnorm``."""
 FUNCTIONS = (
-    "neg", "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "roundto", "floor", "normcdf", "normpdf",
-    "norminv",
+    "neg", "log", "exp", "sqrt", "abs", "maximum", "minimum", "round", "roundto", "yuvarla", "floor", "normcdf",
+    "normpdf", "norminv",
     "cumprod", "cummean", "seq", "factorial", "comb", "perm", *DISTRIBUTION_FUNCTIONS, *COMPARISONS,
 )
 ARITY = {
-    **{name: 2 for name in ("maximum", "minimum", "roundto", "comb", "perm", "dpois", "ppois", *COMPARISONS)},
+    **{name: 2 for name in ("maximum", "minimum", "roundto", "yuvarla", "comb", "perm", "dpois", "ppois",
+                            *COMPARISONS)},
     **{name: 3 for name in ("dbinom", "pbinom", "dnorm")},
     "dhyper": 4, "phyper": 4,
 }
@@ -153,6 +154,22 @@ def roundto(a, digits: int) -> Call:
     """``digits`` ondalık basamağa yuvarlama (ör. tablo değerleri: z iki, Φ(z) dört basamak)."""
 
     return Call("roundto", (_wrap(a), _wrap(digits)))
+
+
+def yuvarla(a, digits: int) -> Call:
+    """Ders kuralıyla ``digits`` ondalık basamağa yuvarlama: tam yarım sıfırdan uzağa gider (0,835 → 0,84;
+    −0,835 → −0,84). ``roundto`` (Python ``np.round``, R ``round``) tam yarımı iki dilde farklı yuvarlayabilir; bu
+    fonksiyon üç yerde (uygulama, Python, R) aynı işlemlerle yazılır: işaret × taban(|a|·10^d + 0,5 + 10⁻⁷) / 10^d.
+    10⁻⁷ payı (ölçeklenmiş değerde) kayan nokta yazımındaki küçük farkı (0,8349999…) giderir; sonuç işaretsiz sıfırdır
+    (−0,0 değil). İki ondalıklı x, μ ve σ ile kurulan z = (x − μ)/σ için (|x|, |μ| ≤ 10⁵, 0,01 ≤ σ ≤ 10⁴) tam
+    yarımdaki z'nin kayan nokta farkı bu paydan küçüktür; yarımda olmayan bir z ise yarımdan en az 5·10⁻⁷ uzaktadır,
+    pay onu yukarı taşımaz. Başka z'lerde (σ/√n ya da √(np(1 − p)) paydalı) pay her durumu kapsamaz: genel
+    uygulamalar ders kuralının kesin sonucunu ayrıca hesaplar (``ornek.ders_yuvarla_kok``) ve ayrılan değerde
+    açık bir iletiyle değer değiştirilmesini ister. İki ondalıklı z'lerde (|z| ≤ 10) Φ ve üç ondalıklı p'lerde Φ⁻¹,
+    ölçeklenmiş değerde hiçbir yarıma 10⁻⁵'ten yakın değildir (testte denetlenir). Kendi değerleri ve alternatif
+    örneklerde tablo kuralı (z iki, Φ dört, Φ⁻¹ üç ondalık) bununla uygulanır; notların kodu ``roundto`` kullanır."""
+
+    return Call("yuvarla", (_wrap(a), _wrap(digits)))
 
 
 def normcdf(a) -> Call:
@@ -379,6 +396,9 @@ def evaluate(
             return np.rint(values[0])
         if expr.fn == "roundto":
             return np.round(values[0], int(values[1]))
+        if expr.fn == "yuvarla":  # üretilen koddaki yuvarla() ile aynı işlem sırası; + 0.0: işaretsiz sıfır
+            scale = 10.0 ** int(values[1])
+            return np.sign(values[0]) * np.floor(np.abs(values[0]) * scale + 0.5 + 1e-7) / scale + 0.0
         if expr.fn == "floor":
             return np.floor(values[0])
         if expr.fn == "normcdf":

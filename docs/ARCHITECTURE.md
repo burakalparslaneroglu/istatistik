@@ -28,10 +28,10 @@ sezgi kurar ve kavramları sınar.
 | `core/quiz/` | Soru türleri, notlandırma, güvenli formül okuma ve konu soru setleri |
 | `core/charts.py` | Plotly grafikleri; `show_figure` tek `st.plotly_chart` çağrısıdır ve eksen adı ister |
 | `topics/lab_ui.py`, `topics/sim_ui.py`, `topics/quiz_ui.py` | Üç sekmenin ortak arayüzü |
-| `core/labs/ornek.py`, `core/labs/ornekler.py` | Uygulama sekmesinin ek veri kaynakları: örnek (`Case`), rol (`Role`), ayar (`Setting`), ayrı okunan sütun (`SeparateColumn`), kendi verini yükle tanımı (`CustomLab`), seçimlerden örneğe (`custom_case`), dosyasız konularda kendi değerlerini gir (`Parameter`, `ParamLab`, `parameter_values`), metinler için kesin ondalık sayılar ve kesirler (`kesin`, `ondalik`, `kesin_esit`, `kesir_basamak`, `kesir_metin`; karşılaştırılan yakın değerler için `kesir_ayirt`) ve kayıt |
+| `core/labs/ornek.py`, `core/labs/ornekler.py` | Uygulama sekmesinin ek veri kaynakları: örnek (`Case`), rol (`Role`), ayar (`Setting`), ayrı okunan sütun (`SeparateColumn`), kendi verini yükle tanımı (`CustomLab`), seçimlerden örneğe (`custom_case`), dosyasız konularda kendi değerlerini gir (`Parameter`, `ParamLab`, `parameter_values`), metinler için kesin ondalık sayılar ve kesirler (`kesin`, `ondalik`, `kesin_esit`, `kesir_basamak`, `kesir_metin`; karşılaştırılan yakın değerler için `kesir_ayirt`; girilen değerlerin kesin kesri ve karekökü, ders kuralıyla yuvarlama (irrasyonel z = a√b için de kesin), küçük değerlerde anlamlı basamak ve "=" / "≈" yazımı için `kesir_degeri`, `kesir_kok`, `ders_yuvarla`, `ders_yuvarla_kok`, `onemli_basamak`, `deger_metni`, `olasilik_metni`, `deger_tex`) ve kayıt |
 | `core/labs/ornek_konuNN.py` | Konunun genel uygulaması (notlardaki adımlar, verisi değiştirilebilir), kurgusal alternatif örnek ve kendi verini yükle rolleri |
 | `core/labs/kendi_veri.py` | Yüklenen dosyayı okuma (Excel; CSV için ayırıcı, ondalık işareti ve kodlamanın algılanması), kodda kullanılacak sütun adları, Türkçe sıralama, temizleme ve doğrulama |
-| `topics/kendi_veri_ui.py` | Kendi verini yükle paneli: dosya yükleme, örnek dosya, sütun ve kategori seçimi, tür tablosu, ayar kaydırıcıları; kendi değerlerini gir paneli (sayı girişleri) |
+| `topics/kendi_veri_ui.py` | Kendi verini yükle paneli: dosya yükleme, örnek dosya, sütun ve kategori seçimi, tür tablosu, ayar kaydırıcıları; kendi değerlerini gir paneli (sayı girişleri; bir satırda en çok üç grup) |
 | `topics/shared.py` | Konu başlığı ve yönlendirici soru |
 
 Eski yapı (konuya özel `core/topicNN_logic.py` modülleri, `core/question_engine.py` ve
@@ -45,6 +45,8 @@ Bir konu uygulaması tek bir `LabSpec` tanımıdır ve dört çıktıyı birlikt
 1. `topics/lab_ui.py` adımları, tabloları, grafikleri ve kodu gösterir. Her adımda o adımın sonundaki durum
    gösterilir; sonraki adımların eklediği sütunlar görünmez. Satır içi veri, aynı adımda bütün sütunlarını
    gösteren bir `ShowFrame` ile sonuçlanıyorsa yalnız girdi sütunlarıyla gösterilir (tablo iki kez görünmez).
+   Notlar dışındaki kaynaklarda satır içi verinin sütun basamakları aynı adımdaki `ShowFrame.decimals`'tan alınır
+   (`lab_ui._later_hints`; ör. Konu 11'de tablo satırı 1,2 yazılır, 1,20 değil).
 2. `core/labs/runner.py` hesabı yapar; her `Check` notlarda basılı bir sayıdır ve tolerans basılı basamak
    sayısıdır (0,5 × 10⁻ᵈ). Notlar dışındaki kaynaklarda beklenen değer uygulamanın hesabıdır; üretilen koddaki
    tolerans max(0,5 × 10⁻ᵈ, 10⁻¹² × |beklenen|) + 10⁻¹²'dir (çok büyük değerlerde toplamların son basamakları dilden
@@ -83,12 +85,15 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   dosyaya, Excel sayfasına ve rol seçimine bağlıdır; bunlar değişince öneri yeniden hesaplanır. Ayardan bağımsız
   denetimler (`CustomLab.validate`) kaydırıcıdan önce çalışır; ayara bağlı bir hata (ör. sınıf sınırları iki dilde
   aynı yazılamıyor) kaydırıcının altında gösterilir.
-- **Kendi değerlerini gir (`ParamLab`):** dosya gerektirmeyen konularda (Konu 9) üçüncü seçenek budur. Her
+- **Kendi değerlerini gir (`ParamLab`):** dosya gerektirmeyen konularda (Konu 9–12) üçüncü seçenek budur. Her
   `Parameter` bir sayı girişidir (tam sayı ya da `decimals` ondalıklı; değer aralığa çekilir ve kesin yuvarlanır);
   başlangıç değerleri alternatif örneğinkilerdir ve kaynak değişse de oturumda korunur. Parametreler arasındaki
   koşullar (`ParamLab.validate`, ör. x ≤ n) panelin altında açık bir iletiyle gösterilir. Üretilen kod değerleri
   satır içinde yazar; betik başlığı "kendi değerleriniz" der ve dosya adı `ikt217_konuNN_kendi_degerlerim` olur
-  (`codegen.base.uses_file`).
+  (`codegen.base.uses_file`). Parametreler `Parameter.group` ile notlardaki örneklere göre gruplanır (grup başlığı
+  kurduğu adımları söyler); bir satırda en çok üç grup durur, daha çok grup satırlara olabildiğince eşit bölünür
+  (4 → 2 + 2, 5 → 3 + 2, 6 → 3 + 3, 7 → 3 + 2 + 2; bütün sütunlar aynı genişlikte; `kendi_veri_ui._group_columns`).
+  Üç ya da daha az grubu olan konuların paneli değişmez.
 - **Ayrı okunan sütun (`Role.separate`):** diğer sütunlardan kısa olabilen bir sütun (Konu 4'te dönemlik yüzde
   değişimler) ana veriden ayrı, kendi `ReadFile` işlemiyle ve yalnız dolu hücreleriyle, dosyadaki sırayla okunur
   (`SeparateColumn`, `Case.extra["separate"]`). Ana verinin satır çıkarma kuralı ve boş hücre notları ona
@@ -169,6 +174,14 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   skaler tablosu, grafik açıklaması); kutu özeti değerleri kısa ondalık yazımlarıyla tam (11,625) ve sütunları
   serilerin etiketleriyle gösterilir; nokta grafiğindeki başvuru çizgisinin değeri metrikle aynı basamakla yazılır
   (`DotPlot.reference_decimals`, `with_app_values` doldurur).
+  Metrikler satırda en çok dört durur; 1280 px'de dört sütuna en çok 12 karakterlik değer sığdığı için daha uzun bir
+  değer (ör. 0,000000000014) varsa o metrik grubunun satırları üç ya da iki metrikle kurulur (`lab_ui._metric_row_size`;
+  üçte 16, ikide 24 karakter). Notlardaki ve alternatif örneklerdeki değerler 12 karakteri aşmaz; onların ekranı
+  değişmez. Grafik eksenlerinde SI ön eki kullanılmaz (`lab_ui._plain_ticks`, Plotly `exponentformat="none"`:
+  20µ yerine 0,00002; 15k yerine 15.000): µ ortalama simgesiyle karışırdı; notların grafikleri değişmez.
+  Bilinen sınır: matematikte tam sıfır olan bir skaler kayan nokta gürültüsüyle −1e-17 hesaplanırsa üretilen
+  betiğin `print` satırı "-0" yazabilir (kontrol satırı işaretsizdir, uygulama 0 gösterir); bütün konuların `print`
+  satırlarını değiştirmemek için dokunulmadı.
 - **Kategori sırası:** alfabetik (Türkçe sıra, sayılar değerleriyle), dosyadaki ilk görülme sırası ya da
   frekans. Sıra kodda açık bir liste olarak yazılır; dil ve yerel ayar farkı sonucu değiştirmez.
 - **Gizlilik:** yüklenen dosya ve ondan kurulan uygulama yalnız `st.session_state` içinde tutulur; ortak
@@ -325,6 +338,17 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   kadar toplanır. Adım 8 aynı üç modelin P(X ≥ 1), P(Y = 0) ve P(Z ≥ 1) olasılıklarıdır. Binom ve hipergeometrik
   olasılıklar kesirle (metinde "=" / "≈"); çok küçük olasılıklar üç anlamlı basamak görünecek kadar (en çok 12)
   basamakla yazılır. R'de tek sütunlu `RowSum` `drop = FALSE` ile yazılır (n = 1).
+- Genel uygulama (`ornek_konu10`, kendi değerlerini gir; 21 değer, 4 grup): tek-düze a, b, alt aralık c–d ve yoğunluk
+  adımı için genişlik w; normal μ, σ, x, z₀ ve aralık x₁–x₂; iki ölçekte göreli konum (x, μ, σ iki kez);
+  bütünleştirici μ, σ, v₁ ve v₂. Koşullar: a < b, a ≤ c < d ≤ b, x₁ < x₂, v₁ ≠ v₂; normal değerler μ ± 10σ içinde
+  (daha uzak kuyruklar 10⁻²³'ten küçüktür); |konum| ≤ 10⁵, 0,01 ≤ σ ≤ 10⁴. Alanlar Φ tablosu kullanılmadan orta nokta
+  dikdörtgenleriyle bulunur (Φ Konu 11'dedir): Adım 3 μ ± 6σ, genişlik σ/1000 (12 000 dikdörtgen); Adım 6 [x₁, x₂]
+  aralığında 1000–20 000 dikdörtgen (z ölçeğinde genişlik en çok 0,001), z ölçeğindeki toplam orta noktaların z = (x −
+  μ)/σ ile taşınmasıdır; Adım 7 μ ± 2σ, genişlik σ/1000. Metinde z, μ ± kσ ve (d − c)/(b − a) kesin kesirlerden
+  yazılır ("=" / "≈"); 10⁻³'ten küçük değerler üç anlamlı basamakla (`onemli_basamak`; 1/(b − a) = 0,000025, P =
+  %0,001), 10⁻¹²'den küçük alanlar "≈ 0 (10⁻¹²'den küçük)". Adım 2'nin metni w'nin 1'den küçük, 1'e eşit ya da büyük
+  olmasına göre kurulur (yükseklik 1'i aşar, tam 1'dir ya da 1'in altındadır); her durumda 0 ile 1 arasında olması
+  gereken alandır.
 - Deneylerin varsayılan ayarları notların örnekleridir (Şekil 9.6'nın p = 0,20 paneli, §9.4'te λ = 3, Tablo
   9.1'deki N = 40, r = 4, n = 8; N(70, 10²), U(120, 140)). Poisson deneyinde gösterilen değerler
   0, …, ⌈2λ + 4√λ + 6⌉ aralığıdır; bu sınırı aşma olasılığı kaydırıcının her değerinde 10⁻¹⁰'dan küçüktür.
@@ -333,6 +357,23 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
 
 - `roundto(a, d)`: notlardaki tablo kuralı; z iki, Φ(z) dört ondalık basamağa yuvarlanır (Python `np.round`,
   R `round`). Tablo kuralıyla bulunan sonuç ve yuvarlamasız sonuç birlikte gösterilir (ör. 0,5859 ve 0,5858).
+- `yuvarla(a, d)` (`expr.yuvarla`): ders kuralı, tam yarım sıfırdan uzağa (0,835 → 0,84; −0,835 → −0,84). `np.round`
+  ve R `round` tam yarımı farklı yuvarlayabildiği (0,825 → 0,82) için uygulama, Python ve R aynı işlem sırasını
+  kullanır: işaret(a) · taban(|a| · 10ᵈ + 0,5 + 10⁻⁷) / 10ᵈ; yardımcı fonksiyon yalnız kullanıldığında betiğe yazılır.
+  10⁻⁷ payı kayan nokta yazımındaki farkı (0,8349999…) giderir; sondaki + 0 sıfırı işaretsiz yapar (−0,00
+  yazılmaz). Pay, iki ondalıklı x, μ ve σ ile kurulan z = (x − μ)/σ için |x|, |μ| ≤ 10⁵ ve 0,01 ≤ σ ≤ 10⁴ iken
+  güvenlidir: tam yarımdaki z'nin kayan nokta farkı (en çok yaklaşık 2 · 10⁻⁸) paydan küçük, yarımda olmayan z ise
+  yarımdan en az 5 · 10⁻⁷ uzaktadır. Paydası σ/√n ya da √(np(1 − p)) olan z'ler bu kapsamda değildir: her z için ders
+  kuralının kesin sonucu ayrıca hesaplanır (`ornek.ders_yuvarla_kok`; z = a√b, karşılaştırmalar karelerle) ve
+  hesaplanandan ayrılırsa (tam yarım ya da yarıma 10⁻⁹ düzeyinde yakın z) uygulama sessiz kalmaz, değerlerden
+  birinin değiştirilmesini ister (`_check_table_rule`). Φ'nin iki ondalıklı z'lerde ve Φ⁻¹'in üç ondalıklı p'lerde
+  değeri ölçeklenmiş olarak hiçbir yarıma 10⁻⁵'ten yakın değildir (testte). Konu 11–12'nin ek kaynakları tablo
+  kuralını bununla uygular (z iki, Φ dört, Φ⁻¹ üç ondalık); notların kodu `roundto` kullanır ve değişmez.
+  Yuvarlamasız sağ kuyruk 1 − Φ(z) yerine Φ(−z), ortalamanın üstündeki aralık Φ(z₂) − Φ(z₁) yerine
+  Φ(−z₁) − Φ(−z₂) ile hesaplanır (büyük z'de 1'e yakın iki sayının farkı kesinliğini yitirir). Tablo kuralıyla
+  bulunan değerler dört basamaklıdır; yuvarlamasız olasılıkların metrik, kontrol ve metin basamağı
+  `olasilik_basamak`tır (10⁻³'ten küçükse üç anlamlı basamak, en çok 12; kayan noktada sıfıra inen değer
+  "≈ 0 (10⁻¹²'den küçük)"). Kesin değeri olan olasılık (ör. Bin(2; 0,5) için P(X = 1) = 0,5) "=" ile yazılır.
 - Yoğunluklar (`DENSITIES`): normal (μ, σ), tek-düze (a, b), üstel (μ, σ = μ; scipy `expon.pdf(x, scale=μ)`,
   R `dexp(x, rate = 1 / μ)`) ve gamma (biçim k, oran r; scipy `gamma.pdf(x, k, scale=1 / r)`, R
   `dgamma(x, shape = k, rate = r)`). Grafik parametreleri sayı ya da önceden hesaplanmış bir skalerin adıdır.
@@ -343,6 +384,17 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
 - `Histogram(curves=…)`: beklenen sayı eğrisi, gözlem sayısı × kutu genişliği × f(x); histogramla aynı ölçektedir.
   `LineChart(bands=…)`: aynı çerçeveden kesikli çizilen ek seriler (ör. μ ± 2σ/√n bandının iki kenarı); boş
   etiketli seri açıklamada gösterilmez.
+- Genel uygulama (`ornek_konu11`, kendi değerlerini gir; 22 değer, 5 grup): standart normalde z, a ve b (|z| ≤ 3,99);
+  normal modelde μ, σ, x, x₁, x₂ ve ters normal için sol alan p; binomda n, p, x; üstelde ortalama süre, t₁, t₂,
+  saatlik λ ve bekleme t; bütünleştiricide λ, t, satışın μ, σ ve eşiği s. Adım 1'in tablo kesiti |z|'nin satırı ± 0,1
+  (0–3,9 içinde) ve on sütundur; Adım 5 Tablo 11.2'nin sol alanlarını da gösterir. Binom olasılık tablosu n ≤ 30
+  iken bütün değerlerle, daha büyük n'de np ± (5σ + 3) penceresiyle (altı ondalık) yazılır; normal yaklaşım
+  koşulu ve süreklilik düzeltmesi girilen değerlerden kurulur. Üstelde μ = 60/λ dakika.
+- Genel uygulama (`ornek_konu12`, kendi değerlerini gir; 21 değer, 6 grup): iki örneklem büyüklüğüyle X ve X̄
+  yoğunlukları; n, 4n, 16n, 64n tablosu (n ≤ 156); X̄ ile olasılıkta tablo kuralı ve n < 30 iken anakütlenin normal
+  varsayıldığı notu; p̂'nin iki örneklem büyüklüğünde standart hatası ve np ≥ 5, n(1 − p) ≥ 5 koşulu; sonlu
+  anakütle düzeltmesinde n = N (standart hata 0), n = 1 ve n/N ≤ 0,05 durumları; bütünleştirici ortalama ve oran.
+  Standart hata σ/√n yalnız n tam kare iken kesin yazılır ("="), aksi hâlde "≈".
 - Konu 12 Deney 1'in varsayılan ayarları notlardaki Şekil 12.13'ün veri üretim sürecidir (N(50, 20²), n = 100,
   tohum 217); şekildeki yol Python'da birebir üretilir. Deney 2'nin anakütlesi Şekil 12.8'deki üstel dağılımdır
   ve X̄'in tam dağılımı gamma(n, n) eğrisiyle gösterilir. Deney 3'te histogramın her kutusu p̂'nin tek bir
@@ -427,10 +479,23 @@ değerlerinde sayısal karşılaştırmayla sınanır; `100g/n` ile `g/n*100` ay
   tam σ ve ρ, tek değerli olmayan olay, sıralı dosya, uzun ve negatif değerler, çok küçük ölçekli veri, büyük
   değerlerde kovaryans, üstel yazılan sayılarla R betiği, eksi sıfırsız çıktı; Konu 9'da x = 0 ve x = n olayları,
   yarım noktalar, kesirli λ, n = 1 ve n = 2 yazımı.
-- `tests/test_app_smoke.py`: "Kendi verini yükle" seçeneğinde örnek dosyayla bütün adımlar; Konu 9'da "Kendi değerlerini
-  gir" paneli (başlangıç değerleri, panelin altındaki hata, kaynak değişince korunan değerler); veri kaynağı değişince
-  dosyanın ve seçimlerin korunması, dosyanın kaldırılması ve yeni adın koda yansıması; Konu 3'te sınıf sayısı
-  kaydırıcısının sınıfları değiştirmesi, ayara bağlı hatanın kaydırıcının altında görünmesi ve Excel sayfası değişince
-  önerinin yeniden hesaplanması.
+- `tests/test_konu10_12_ornekler.py`: Konu 10–12 alternatif örneklerinin numpy ve scipy ile bağımsız doğrulanması;
+  tablo kuralının kesin kesirle yazılmış ders kuralıyla bütün tablo noktalarında aynı olması, tam yarım (0,835) ve
+  kayan nokta farkı durumları (pay yeterli; aşırı uçta açık ileti); geçersiz değer iletileri; uç metinler (n = N, n =
+  1, büyük n'de binom penceresi); kendi değerlerle ve çok küçük değerlerle (en çok 12 ondalık) üretilen kodun iki
+  dilde yeniden üretimi (işaretli sıfır yazılmaz); metin kuralları (değişken sayıya ek yok, matematikte tipografik
+  eksi yok) ve metrik başlıklarıyla değerlerinin sığması. Bağımsız inceleme bulguları için gerileme testleri: etikette
+  tek ilişki işareti ("z = ≈" yok) ve uzun basamak dizisi yok, küçük değerlerde anlamlı basamak, tam sıfır, tam 0,5 ve
+  tam binom olasılığı için "=", işaretsiz sıfır, uç durum cümleleri (simetrik binom, eşit iki mod, p < 0,5 eşiği, n =
+  1, negatif ortalama), irrasyonel z'nin yarıma çok yakınlığı ve çok küçük irrasyonel z, Φ ve Φ⁻¹'in yarımlardan
+  uzaklığı, kuyruk aralıklarında kesinlik, kayan noktada sıfıra inen olasılık, tam 0 değerinin denetim basamağı,
+  ondalık değerler arasında ";", kod üreticisinin döngü değişkenlerinin bütün tanımlarda çerçeve ve skaler adlarını
+  ezmemesi, parametre gruplarının yerleşimi ve satır içi tablonun basamağı.
+- `tests/test_app_smoke.py`: "Kendi verini yükle" seçeneğinde örnek dosyayla bütün adımlar; Konu 9–12'de "Kendi
+  değerlerini gir" paneli (başlangıç değerleri, panelin altındaki hata, kaynak değişince korunan değerler; Konu
+  10–12'de geçersiz değer iletisi ve değişen değerin metne yansıması); veri kaynağı değişince dosyanın ve seçimlerin
+  korunması, dosyanın kaldırılması ve yeni adın koda yansıması; Konu 3'te sınıf sayısı kaydırıcısının sınıfları
+  değiştirmesi, ayara bağlı hatanın kaydırıcının altında görünmesi ve Excel sayfası değişince önerinin yeniden
+  hesaplanması.
 
 Yeni bir konu kayda eklendiğinde ayrıca test yazmadan bu sözleşmelere tabidir.

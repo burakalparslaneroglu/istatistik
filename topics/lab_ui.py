@@ -392,9 +392,27 @@ def _metrics(op, state: LabState) -> list[tuple[str, str]]:
     return [(op.comment, tr_number(state.scalars[op.name], op.decimals, op.percent))]
 
 
+def _plain_ticks(figure) -> None:
+    """Notlar dışındaki kaynaklarda eksen etiketleri SI ön ekiyle (20µ, 15k) yazılmaz: µ ortalama simgesiyle karışır.
+    Sayılar Türkçe biçimde tam yazılır (0,000016; 20.000). Notların grafikleri değişmez."""
+
+    figure.update_xaxes(exponentformat="none")
+    figure.update_yaxes(exponentformat="none")
+
+
+def _metric_row_size(items: list[tuple[str, str]]) -> int:
+    """Bir satırdaki metrik sayısı: en çok dört. 1280 px'de dört sütuna en çok 12 karakterlik bir değer sığar; daha uzun
+    bir değer (ör. 0,000000000014) varsa grubun bütün satırları üç ya da iki metrikle kurulur ve değer kesilmez.
+    Notlardaki ve alternatif örneklerdeki değerler 12 karakteri aşmaz; onların ekranı değişmez."""
+
+    longest = max((len(value) for _, value in items), default=0)
+    return 4 if longest <= 12 else 3 if longest <= 16 else 2 if longest <= 24 else 1
+
+
 def _show_metrics(items: list[tuple[str, str]]) -> None:
-    for start in range(0, len(items), 4):
-        chunk = items[start:start + 4]
+    size = _metric_row_size(items)
+    for start in range(0, len(items), size):
+        chunk = items[start:start + size]
         for column, (title, value) in zip(st.columns(len(chunk)), chunk):
             column.metric(title, value)
 
@@ -407,6 +425,20 @@ def _input_only(operations, index: int, state: LabState) -> bool:
     columns = set(state.frames[op.frame].columns)
     return any(isinstance(later, ShowFrame) and later.frame == op.frame and columns <= set(later.columns)
                for later in operations[index + 1:])
+
+
+def _later_hints(operations, index: int) -> dict[str, int]:
+    """Satır içi verinin sütun basamakları, aynı adımda aynı çerçeveyi gösteren ``ShowFrame``'den (notlar dışında):
+    girdi tablosu ile sonuç tablosu aynı sütunu aynı basamakla gösterir (ör. Konu 11'de tablo satırı 1,2). Birden çok
+    ``ShowFrame`` varsa bir sütun için en yakındaki geçerlidir."""
+
+    frame = operations[index].frame
+    hints: dict[str, int] = {}
+    for later in operations[index + 1:]:
+        if isinstance(later, ShowFrame) and later.frame == frame:
+            for column, digits in later.decimals:
+                hints.setdefault(column, digits)
+    return hints
 
 
 def render_operations(operations, state: LabState, label: Callable[[str], str], key_prefix: str,
@@ -435,7 +467,7 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
                 grid = pd.DataFrame(values.reshape(-1, op.layout), columns=[str(i) for i in range(1, op.layout + 1)])
                 show_table(_frame(grid, str))
             else:
-                show_table(_frame(frame, label, small))
+                show_table(_frame(frame, label, small, _later_hints(operations, index) if small else None))
         elif isinstance(op, FromCounts):
             counts = pd.DataFrame([tuple(row) for row in op.rows], columns=[*op.columns, "sayi"])
             st.markdown(f"**{escape(op.comment)}**")
@@ -479,7 +511,10 @@ def render_operations(operations, state: LabState, label: Callable[[str], str], 
             show_figure(figure_for(op, state, label), key=f"{key_prefix}_grafik_{index}")
             show_table(display_table(op, state.tables[op.result], label))
         elif isinstance(op, CHART_TYPES):
-            show_figure(figure_for(op, state, label), key=f"{key_prefix}_grafik_{index}")
+            figure = figure_for(op, state, label)
+            if small:
+                _plain_ticks(figure)
+            show_figure(figure, key=f"{key_prefix}_grafik_{index}")
     if pending:
         _show_metrics(pending)
 

@@ -253,6 +253,145 @@ def kesir_yuzde(value: Fraction) -> str:
     return text if (shown * 10 ** digits).denominator == 1 else f"yaklaşık {text}"
 
 
+# --- Sürekli dağılımlar ve tablo kuralı (Konu 10–12) ------------------------------------------------
+# Girilen ondalık sayılar kesin kesirlere çevrilir; z = (x − μ)/σ, μ ± kσ, (d − c)/(b − a) gibi değerler kesin
+# hesaplanır ve metindeki "=" / "≈" ayrımı bu kesirden kurulur. Karekök, e ve Φ içeren değerler (irrasyonel) "≈" ile
+# yazılır.
+# Tablo kuralı (z iki, Φ dört ondalık) ders kuralıyla yuvarlar: tam yarım sıfırdan uzağa (``E.yuvarla``).
+
+def kesir_degeri(value: float) -> Fraction:
+    """Girilen ondalık sayının kesin değeri (0,3 → 3/10; kayan noktalı yazımın kısa biçiminden)."""
+
+    return Fraction(kesin(value))
+
+
+def kesir_kok(value: Fraction) -> Fraction | None:
+    """Kesrin kesin karekökü; pay ya da payda tam kare değilse ``None`` (karekök irrasyoneldir)."""
+
+    if value < 0:
+        return None
+    top, bottom = math.isqrt(value.numerator), math.isqrt(value.denominator)
+    if top * top == value.numerator and bottom * bottom == value.denominator:
+        return Fraction(top, bottom)
+    return None
+
+
+def kisa_kesir(value: Fraction) -> str:
+    """Kısa ondalık bir kesrin (girilen değer, μ ± kσ, μ + zσ) Türkçe yazımı: 0,4; −1,25; 250. Sonsuz ondalıklı
+    kesirler için kullanılmaz (bkz. ``kesir_sayi``)."""
+
+    return ondalik(kesir_ondalik(value))
+
+
+def kisa_kesir_tex(value: Fraction) -> str:
+    """Aynı sayı matematik ifadesinde (0{,}4; -1{,}25)."""
+
+    return kisa_kesir(value).replace(",", "{,}").replace("−", "-")
+
+
+def parantezli(text: str) -> str:
+    """Negatif sayı bir işlemin sağında parantez içinde yazılır: 10 − (−5)."""
+
+    return f"({text})" if text.startswith(("−", "-")) else text
+
+
+def sabit(value: Fraction):
+    """Koddaki sabit; negatif sayı tek terimli eksiyle yazılır (işlemin sağında parantezli: 90 - (-30))."""
+
+    from core.labs import expr as E
+
+    return E.neg(float(-value)) if value < 0 else E.const(float(value))
+
+
+def ders_yuvarla(value: Fraction, digits: int) -> Fraction:
+    """Ders kuralıyla yuvarlama (``E.yuvarla``): tam yarım sıfırdan uzağa (0,835 → 0,84; −0,835 → −0,84)."""
+
+    scale = 10 ** digits
+    magnitude = math.floor(abs(value) * scale + Fraction(1, 2))
+    return Fraction(magnitude if value >= 0 else -magnitude, scale)
+
+
+def ders_yuvarla_kok(factor: Fraction, radicand: Fraction, digits: int) -> Fraction:
+    """z = factor · √radicand için ders kuralıyla yuvarlama, kesin aritmetikle (radicand ≥ 0). Karşılaştırmalar
+    karelerle yapılır; irrasyonel bir z de (ör. z = (x̄ − μ)√n/σ) yarıma ne kadar yakın olursa olsun doğru tarafa
+    yuvarlanır. ``radicand = 1`` iken ``ders_yuvarla`` ile aynıdır."""
+
+    scale = 10 ** digits
+    target = factor * factor * radicand * scale * scale  # (|z| · 10^d)²
+    count = math.isqrt(math.floor(target))
+    while count > 0 and (count - Fraction(1, 2)) ** 2 > target:
+        count -= 1
+    while (count + Fraction(1, 2)) ** 2 <= target:
+        count += 1
+    return Fraction(count if factor >= 0 else -count, scale)
+
+
+def onemli_basamak(value: float, exact: Fraction | None = None, minimum: int = 0) -> int:
+    """Konu 10–12'de bir büyüklüğün gösterim basamağı: kesin değer en çok dört basamakla tam yazılabiliyorsa o kadar
+    (en az ``minimum``; tam yarımda bir basamak daha), değilse dört. Mutlak değeri 10⁻³'ten küçük bir değer üç anlamlı
+    basamak görünecek kadar basamakla yazılır (en çok 12; kesin değer daha az basamakla tam yazılabiliyorsa o kadar):
+    1/(b − a) = 0,000025 "≈ 0" görünmez ve kontrolün toleransı değerin kendisinden büyük olmaz."""
+
+    if exact is not None:
+        digits = kesir_basamak(exact, 4, minimum)
+        if (exact * 10 ** digits).denominator == 1:
+            return digits
+    magnitude = abs(float(exact if exact is not None else value))
+    if magnitude == 0 or magnitude >= 1e-3:
+        return 4 if exact is None else kesir_basamak(exact, 4, minimum)
+    digits = min(12, math.floor(-math.log10(magnitude)) + 3)
+    if exact is not None:
+        shorter = next((places for places in range(5, digits) if (exact * 10 ** places).denominator == 1), None)
+        if shorter is not None:
+            return shorter
+        if digits < 12 and kesir_yarimda(exact, digits):
+            digits += 1
+    return digits
+
+
+def olasilik_basamak(value: float, exact: Fraction | None = None) -> int:
+    """Olasılığın gösterim basamağı (Konu 9'daki kural): kesir en çok dört basamakla tam yazılabiliyorsa o kadar;
+    değilse dört; 10⁻³'ten küçük olasılıklarda üç anlamlı basamak görünecek kadar (en çok 12). Kesin değer tam
+    yarımdaysa bir basamak daha."""
+
+    if exact is not None and kesir_isaret(exact, kesir_basamak(exact)) == "=" and kesir_basamak(exact) <= 4:
+        return kesir_basamak(exact)
+    magnitude = abs(float(value))
+    if magnitude == 0 or magnitude >= 1e-3:
+        return 4 if exact is None else max(4, kesir_basamak(exact))
+    digits = min(12, math.floor(-math.log10(magnitude)) + 3)
+    if exact is not None and kesir_yarimda(exact, digits):
+        digits += 1
+    return digits
+
+
+def deger_metni(value: float, exact: Fraction | None, digits: int) -> tuple[str, str]:
+    """Düzyazıda gösterilen değer: (işaret, sayı). Kesin değer ``digits`` basamakla tam yazılabiliyorsa "=", değilse
+    "≈"; kesin değeri bilinmeyen (irrasyonel) sayılar "≈" ile ve ekrandaki gibi yuvarlanır. Sondaki sıfırlar
+    yazılmaz (genel uygulamaların ortak kuralı)."""
+
+    if exact is not None:
+        return kesir_esit(exact, digits), kesir_sayi(exact, digits)
+    return "≈", ondalik(Decimal(f"{float(value):.{digits}f}"))
+
+
+def olasilik_metni(value: float, exact: Fraction | None = None, digits: int | None = None) -> str:
+    """Olasılık düzyazıda işaretiyle: "= 0,25", "≈ 0,2668"; çok küçükse "≈ 0 (10⁻¹²'den küçük)"."""
+
+    digits = olasilik_basamak(value, exact) if digits is None else digits
+    if 0 < abs(float(value)) < 5e-13 or (exact is None and float(value) == 0):  # kayan noktada sıfıra inen değer
+        return "≈ 0 (10⁻¹²'den küçük)"
+    return " ".join(deger_metni(value, exact, digits))
+
+
+def deger_tex(value: float, exact: Fraction | None, digits: int) -> str:
+    """Matematik ifadesinde gösterilen değer işaretiyle: "= 0{,}25" ya da "\\approx 0{,}0167"."""
+
+    if exact is not None:
+        return f"{kesir_isaret(exact, digits)} {kesir_tex(exact, digits)}".replace("−", "-")
+    return f"\\approx {ondalik_tex(Decimal(f'{float(value):.{digits}f}'))}".replace("−", "-")
+
+
 def liste(items: list[str]) -> str:
     """Türkçe sıralama: "A", "A ve B", "A, B ve C"."""
 

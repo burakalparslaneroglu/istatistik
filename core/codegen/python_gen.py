@@ -96,7 +96,8 @@ _SCIPY_FUNCTIONS = {"normcdf", "normpdf", "norminv", *E.DISTRIBUTION_FUNCTIONS}
 _MATH_FUNCTIONS = set(E.COUNTING_FUNCTIONS)
 _FUNCTIONS = {
     "log": "np.log", "exp": "np.exp", "sqrt": "np.sqrt", "abs": "np.abs", "maximum": "np.maximum",
-    "minimum": "np.minimum", "round": "np.rint", "roundto": "np.round", "floor": "np.floor", "cumprod": "np.cumprod",
+    "minimum": "np.minimum", "round": "np.rint", "roundto": "np.round", "yuvarla": "yuvarla", "floor": "np.floor",
+    "cumprod": "np.cumprod",
     "cummean": "np.cumsum({0}) / np.arange(1, len({0}) + 1)", "seq": "np.arange(1, len({0}) + 1)",
     "factorial": "math.factorial(int({0}))", "comb": "math.comb(int({0}), int({1}))",
     "perm": "math.perm(int({0}), int({1}))",
@@ -133,6 +134,16 @@ _PERCENTILE = [
     "    k = int(np.floor(konum))",
     "    return x[k - 1] + (konum - k) * (x[k] - x[k - 1])",
 ]
+
+_ROUND_HALF = [
+    "def yuvarla(deger, basamak):",
+    '    """Ders kuralıyla yuvarlama: tam yarım sıfırdan uzağa gider (0,835 → 0,84; −0,835 → −0,84).',
+    "    np.round tam yarımı farklı yuvarlayabilir (0,825 → 0,82). 1e-7 payı kayan nokta yazımındaki",
+    '    küçük farkı (0,8349999…) giderir; sondaki + 0.0 sıfırı işaretsiz yapar (-0.0 değil)."""',
+    "    carpan = 10.0 ** basamak",
+    "    return np.sign(deger) * np.floor(np.abs(deger) * carpan + 0.5 + 1e-7) / carpan + 0.0",
+]
+"""Tablo kuralı (z iki, Φ dört ondalık) notlar dışındaki kaynaklarda bu fonksiyonla uygulanır (``E.yuvarla``)."""
 
 
 _CLEAN_TEXT = [
@@ -353,6 +364,8 @@ class PythonGenerator(Generator):
             lines += _BOUNDARY_TEXT + ["", ""]
         if _needs_percentile(operations):
             lines += _PERCENTILE + ["", ""]
+        if "yuvarla" in functions_used(operations):
+            lines += _ROUND_HALF + ["", ""]
         boxes = [op for op in flat if isinstance(op, (BoxSummary, BoxPlot))]
         if boxes:
             rounded = any(op.fence_decimals is not None for op in boxes)
