@@ -34,6 +34,7 @@ from core.labs.ornek import (
     ders_yuvarla,
     ders_yuvarla_kok,
     deger_metni,
+    isaretsiz_skalerler,
     kesir_basamak,
     kesir_degeri,
     kesir_kok,
@@ -719,19 +720,26 @@ def _exp_prob(t: Fraction, mean) -> E.Expr:
     return E.sub(1, E.exp(E.neg(E.div(_c(t), mean))))
 
 
+def _exp_between(t1: Fraction, t2: Fraction, mean) -> E.Expr:
+    """P(t₁ < X ≤ t₂) = e^(−t₁/μ) − e^(−t₂/μ): sağ kuyruk olasılıklarının farkı. F(t₂) − F(t₁) farkı uzak kuyrukta iki
+    sayı 1'e çok yakın olduğundan sıfıra çökerdi; bu yazılışta çökme olmaz."""
+
+    return E.sub(E.exp(E.neg(E.div(_c(t1), mean))), E.exp(E.neg(E.div(_c(t2), mean))))
+
+
 def _step8(ctx: dict) -> LabStep:
     mean, t1, t2 = ctx["mu_e"], ctx["t1"], ctx["t2"]
     M, T1, T2 = _txt(mean), _txt(t1), _txt(t2)
     end = _nice_up(max(4 * mean, t2 + mean))
     probe = run_operations((Scalar("a", _exp_prob(t1, _c(mean)), "", 4), Scalar("b", _exp_prob(t2, _c(mean)), "", 4),
-                            Scalar("c", E.sub(E.ref("b"), E.ref("a")), "", 4))).scalars
+                            Scalar("c", _exp_between(t1, t2, _c(mean)), "", 4))).scalars
     d1, d2, d12 = (olasilik_basamak(probe[key]) for key in ("a", "b", "c"))
     if t1 == 0:
         d1 = 0
     operations = (
         Scalar("P_t1", _exp_prob(t1, _c(mean)), "P(X ≤ t₁) = 1 − e^(−t₁/μ)", decimals=d1),
         Scalar("P_t2", _exp_prob(t2, _c(mean)), "P(X ≤ t₂) = 1 − e^(−t₂/μ)", decimals=d2),
-        Scalar("P_t12", E.sub(E.ref("P_t2"), E.ref("P_t1")), "P(t₁ < X ≤ t₂)", decimals=d12),
+        Scalar("P_t12", _exp_between(t1, t2, _c(mean)), "P(t₁ < X ≤ t₂) = e^(−t₁/μ) − e^(−t₂/μ)", decimals=d12),
         DensityPlot("exponential", float(mean), float(mean), (0, float(end)),
                     f"Üstel dağılım, μ = {M}: P(X ≤ {T2})", _axis(ctx, "ustel", "Süre (dakika)"),
                     shade=((0, float(t2)),), references=((float(t1), f"x = {T1}"),)),
@@ -746,7 +754,9 @@ def _step8(ctx: dict) -> LabStep:
         explanation=(
             f"{story} $X \\sim \\mathrm{{Exp}}(\\mu)$, $f(x) = (1/\\mu)e^{{-x/\\mu}}$, $\\mu = {_tx(mean)}$. "
             "Kümülatif olasılık $P(X \\leq x_0) = 1 - e^{-x_0/\\mu}$ (Denklem 11.8), sağ kuyruk "
-            "$P(X > x_0) = e^{-x_0/\\mu}$ olur (Denklem 11.9). Aralık olasılığı iki kümülatif olasılığın farkıdır: "
+            "$P(X > x_0) = e^{-x_0/\\mu}$ olur (Denklem 11.9). Aralık olasılığı iki kümülatif olasılığın farkıdır, "
+            "$F(t_2) - F(t_1)$; kodda aynı fark sağ kuyruklarla $e^{-t_1/\\mu} - e^{-t_2/\\mu}$ diye yazılır "
+            "(uzak kuyrukta iki kümülatif olasılık da 1 değerine çok yakındır ve farkları sıfıra çökerdi). "
             f"$t_1 = {_tx(t1)}$ ve $t_2 = {_tx(t2)}$ dakika."
         ),
         operations=operations,
@@ -903,7 +913,7 @@ def build(values: Mapping[str, float], texts: Mapping[str, str] | None = None, s
         ),
         source=source,
     )
-    return with_app_values(spec)
+    return with_app_values(isaretsiz_skalerler(spec))
 
 
 def _inside(value: Fraction, mean: Fraction, sd: Fraction) -> bool:

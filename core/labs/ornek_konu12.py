@@ -31,6 +31,7 @@ from core.labs.ornek import (
     ders_yuvarla_kok,
     deger_metni,
     deger_tex,
+    isaretsiz_skalerler,
     kesir_degeri,
     kesir_kok,
     kisa_kesir as _txt,
@@ -585,7 +586,7 @@ def build(values: Mapping[str, float], texts: Mapping[str, str] | None = None, s
         ),
         source=source,
     )
-    return with_app_values(spec)
+    return with_app_values(isaretsiz_skalerler(spec))
 
 
 def validate(values: Mapping[str, float]) -> None:

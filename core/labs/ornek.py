@@ -497,6 +497,17 @@ def _reference_decimals(spec: LabSpec) -> LabSpec:
     return replace(spec, steps=tuple(steps))
 
 
+def isaretsiz_skalerler(spec: LabSpec) -> LabSpec:
+    """Üretilen kodun skaler ``print`` satırları sıfıra yuvarlanan değeri işaretsiz yazar ("-0" ya da "-0.00" değil);
+    bkz. ``Scalar.signless``. Yalnız notlar dışındaki Konu 10–12 uygulamaları kullanır."""
+
+    steps = tuple(
+        replace(step, operations=tuple(replace(op, signless=True) if isinstance(op, Scalar) else op
+                                       for op in step.operations))
+        for step in spec.steps)
+    return replace(spec, steps=steps)
+
+
 def with_app_values(spec: LabSpec) -> LabSpec:
     """Kontrollerin beklenen değerlerini uygulamanın kendi hesabıyla doldurur (notlar dışındaki kaynaklar); nokta
     grafiklerinin başvuru değerleri metriklerle aynı basamakla gösterilir (``_reference_decimals``)."""

@@ -362,7 +362,7 @@ def _render_navigation(spec: LabSpec) -> LabStep:
     left.button("‹ Önceki", key=f"{spec.topic_key}_lab_prev", on_click=_shift, args=(spec, -1), width="stretch")
     middle.segmented_control(
         "Adım", options=numbers, format_func=lambda number: f"Adım {number}", key=key,
-        label_visibility="collapsed", width="stretch",
+        label_visibility="collapsed", width="stretch", required=True,
     )
     right.button("Sonraki ›", key=f"{spec.topic_key}_lab_next", on_click=_shift, args=(spec, 1), width="stretch")
     return spec.step(st.session_state.get(key) or numbers[0])

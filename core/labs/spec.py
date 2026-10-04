@@ -472,7 +472,9 @@ class PairStatistic:
 class Scalar:
     """Skalerlerden (``E.ref``) ve sabitlerden hesaplanan tek sayı.
 
-    ``percent``: değer yüzde biriminde; ekranda yüzde işaretiyle gösterilir.
+    ``percent``: değer yüzde biriminde; ekranda yüzde işaretiyle gösterilir. ``signless``: üretilen kodun ``print``
+    satırı, gösterilen basamakta sıfıra yuvarlanan değeri işaretsiz yazar (matematikte tam sıfır olan bir değer kayan
+    noktada -1e-17 çıkarsa "-0" yazılmaz); notlar ve Konu 1–9 çıktıları bu seçeneği kullanmaz, değişmez.
     """
 
     name: str
@@ -480,6 +482,7 @@ class Scalar:
     comment: str
     decimals: int = 4
     percent: bool = False
+    signless: bool = False
 
 
 @dataclass(frozen=True)

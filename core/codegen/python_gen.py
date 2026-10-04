@@ -545,7 +545,10 @@ class PythonGenerator(Generator):
             ]
         if isinstance(op, Scalar):
             rhs = _render(op.expr, self.dialect(""))
-            shown = f"%{{{op.name}:.{op.decimals}f}}" if op.percent else f"{{{op.name}:.{op.decimals}f}}"
+            value = op.name
+            if op.signless:  # sıfıra yuvarlanan değer işaretsiz yazılır (-0.00 değil)
+                value = f"(0.0 if abs({op.name}) < {0.5 * 10 ** -op.decimals:g} else {op.name})"
+            shown = f"%{{{value}:.{op.decimals}f}}" if op.percent else f"{{{value}:.{op.decimals}f}}"
             return [f"# {op.comment}", f"{op.name} = {rhs}", f'print(f"{_fstring(op.comment)}: {shown}")']
         if isinstance(op, ScalarTable):
             dialect = self.dialect("")

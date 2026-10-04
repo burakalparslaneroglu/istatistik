@@ -566,10 +566,13 @@ class RGenerator(Generator):
         if isinstance(op, Scalar):
             rhs = _r(op.expr, self.dialect(""))
             shown = f"%%%.{op.decimals}f" if op.percent else f"%.{op.decimals}f"
+            value = op.name
+            if op.signless:  # sıfıra yuvarlanan değer işaretsiz yazılır (-0.00 değil)
+                value = f"if (abs({op.name}) < {0.5 * 10 ** -op.decimals:g}) 0 else {op.name}"
             return [
                 f"# {op.comment}",
                 f"{op.name} <- {rhs}",
-                f'cat(sprintf("{_sprintf(op.comment)}: {shown}\\n", {op.name}))',
+                f'cat(sprintf("{_sprintf(op.comment)}: {shown}\\n", {value}))',
             ]
         if isinstance(op, ScalarTable):
             dialect = self.dialect("")

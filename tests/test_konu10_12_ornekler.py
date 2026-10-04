@@ -658,3 +658,35 @@ def test_round_two_findings_stay_fixed() -> None:
     for number in (1, 3, 6):
         assert "μ = 262,4; standart sapması" in decimals.step(number).explanation, number
     assert "P(X ≤ 8,7) = 0,9641; P(X > 8,7)" in O11.alternative().step(4).takeaway
+
+
+SIGNLESS_PRINT = {"Python": ': {(0.0 if abs(', "R": '\\n", if (abs('}
+"""Skaler ``print`` satırındaki işaretsiz sıfır kalıbı (``kontrol_et`` işlevindeki kalıptan ayrılır)."""
+
+
+def test_scripts_print_rounded_zero_without_sign(tmp_path: Path) -> None:
+    """Matematikte tam sıfır olan skaler kayan noktada -1e-17 çıkabilir; ``print`` satırı "-0" yazmaz."""
+
+    noisy10 = _build(O10, mu=0.3, sigma=0.2, z0=-1.5, x=0.5, x1=0.1, x2=0.5)  # μ + z₀σ = −5,6e-17
+    noisy11 = _build(O11, p_sol=0.003, sigma=2.5, mu=6.87)
+    for number, spec in enumerate((noisy10, noisy11)):
+        place = tmp_path / str(number)
+        place.mkdir()
+        _reproduce(spec, place)  # çıktıda "-0" varsa başarısız olur
+        for language, marker in SIGNLESS_PRINT.items():
+            assert marker in render_script(spec, language), language
+    # Kural yalnız bu üç konunun notlar dışındaki uygulamalarında: notların betiği değişmez.
+    from core.labs.registry import LABS
+
+    for key in ("konu10", "konu11", "konu12"):
+        for language, marker in SIGNLESS_PRINT.items():
+            assert marker not in render_script(LABS[key], language), (key, language)
+
+
+def test_exponential_interval_survives_far_tails() -> None:
+    """P(t₁ < X ≤ t₂) = e^(−t₁/μ) − e^(−t₂/μ): F(t₂) − F(t₁) uzak kuyrukta 0'a çökerdi."""
+
+    spec = _build(O11, mu_e=1, t1=40, t2=41)
+    value = _step_values(spec, 8)["P(40 < X ≤ 41)"]
+    assert value == pytest.approx(math.exp(-40) - math.exp(-41), rel=1e-12) and value > 0
+    assert "e^(−t₁/μ) − e^(−t₂/μ)" in spec.step(8).operations[2].comment

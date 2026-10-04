@@ -29,6 +29,7 @@ from core.labs.ornek import (
     TopicVariants,
     deger_metni,
     deger_tex,
+    isaretsiz_skalerler,
     kesir_ayirt,
     kesir_degeri,
     kesir_yuzde,
@@ -643,7 +644,7 @@ def build(values: Mapping[str, float], texts: Mapping[str, str] | None = None, s
         ),
         source=source,
     )
-    return with_app_values(spec)
+    return with_app_values(isaretsiz_skalerler(spec))
 
 
 def _inside(value: Fraction, mean: Fraction, sd: Fraction) -> bool:

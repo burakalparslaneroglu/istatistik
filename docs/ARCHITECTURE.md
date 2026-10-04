@@ -179,9 +179,10 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
   üçte 16, ikide 24 karakter). Notlardaki ve alternatif örneklerdeki değerler 12 karakteri aşmaz; onların ekranı
   değişmez. Grafik eksenlerinde SI ön eki kullanılmaz (`lab_ui._plain_ticks`, Plotly `exponentformat="none"`:
   20µ yerine 0,00002; 15k yerine 15.000): µ ortalama simgesiyle karışırdı; notların grafikleri değişmez.
-  Bilinen sınır: matematikte tam sıfır olan bir skaler kayan nokta gürültüsüyle −1e-17 hesaplanırsa üretilen
-  betiğin `print` satırı "-0" yazabilir (kontrol satırı işaretsizdir, uygulama 0 gösterir); bütün konuların `print`
-  satırlarını değiştirmemek için dokunulmadı.
+  Matematikte tam sıfır olan bir skaler kayan nokta gürültüsüyle −1e-17 hesaplanabilir. Konu 10–12'nin notlar
+  dışındaki uygulamalarında skalerler `signless=True` ile kurulur (`ornek.isaretsiz_skalerler`): üretilen `print` satırı
+  gösterilen basamakta sıfıra yuvarlanan değeri işaretsiz yazar ("-0" ya da "-0.0000" değil). Notların ve Konu 1–9'un
+  `print` satırları değişmez; onlarda bu gürültü gözlenmedi, `kontrol_et` satırları zaten işaretsizdir.
 - **Kategori sırası:** alfabetik (Türkçe sıra, sayılar değerleriyle), dosyadaki ilk görülme sırası ya da
   frekans. Sıra kodda açık bir liste olarak yazılır; dil ve yerel ayar farkı sonucu değiştirmez.
 - **Gizlilik:** yüklenen dosya ve ondan kurulan uygulama yalnız `st.session_state` içinde tutulur; ortak
