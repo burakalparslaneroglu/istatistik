@@ -32,7 +32,9 @@ CUSTOM_TOPICS = [topic for topic in TOPICS if VARIANTS[topic].custom is not None
 """Dosya yüklenen konular ("Kendi verini yükle")."""
 PARAM_TOPICS = [topic for topic in TOPICS if VARIANTS[topic].params is not None]
 """Dosyasız konular ("Kendi değerlerini gir")."""
-R_ENVIRONMENT = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+# R on Windows uses UCRT locale names; Linux's C.UTF-8 raises startup warnings.
+R_LOCALE = "English_United States.utf8" if sys.platform == "win32" else "C.UTF-8"
+R_ENVIRONMENT = dict(os.environ, LANG=R_LOCALE, LC_ALL=R_LOCALE)
 SAMPLE_ROLES = {
     "konu01": ({"sayisal": "Günlük ciro (bin TL)", "kimlik": "Kafe", "ikili": "Hedef durumu"},
                ("İlçe", "Personel sayısı"), {"ikili": "Tuttu"}),

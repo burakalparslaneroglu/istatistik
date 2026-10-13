@@ -10,6 +10,7 @@ from core.codegen.base import LANGUAGES
 from core.topic_registry import get_topic, list_topics
 from core.ui_components import load_css
 from core.ui_preferences import render_text_scale_control
+from topics.navigation_ui import initialize_from_url
 from topics.konu01_veri_istatistige_giris import render as render_konu01
 from topics.konu02_kategorik_verilerin_ozetlenmesi import render as render_konu02
 from topics.konu03_nicel_verilerin_ozetlenmesi import render as render_konu03
@@ -41,6 +42,8 @@ TOPIC_RENDERERS = {
 }
 
 st.set_page_config(page_title=COURSE, page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+
+initialize_from_url()
 
 load_css(Path(__file__).parent / "assets" / "styles.css")
 render_text_scale_control()

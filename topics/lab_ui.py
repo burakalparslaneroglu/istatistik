@@ -355,6 +355,10 @@ def _shift(spec: LabSpec, delta: int) -> None:
 
 def _render_navigation(spec: LabSpec) -> LabStep:
     key = _step_key(spec)
+    pending = f"_{spec.topic_key}_link_step"
+    if pending in st.session_state:
+        st.session_state[key] = st.session_state[pending]
+        del st.session_state[pending]
     numbers = [step.number for step in spec.steps]
     if st.session_state.get(key) not in numbers:
         st.session_state[key] = numbers[0]
@@ -645,6 +649,10 @@ def render_lab(spec: LabSpec) -> None:
             "Sayılar notlardakinden farklıdır; yöntem ve kod aynıdır."
         )
     else:
+        pending = st.session_state.get(f"_{spec.topic_key}_link_step")
+        if pending is not None:
+            target = spec.step(pending)
+            st.caption(f"Bağlantı hedefi: Adım {target.number}: {target.title}. Girdilerinizi hazırlayınca bu adım açılır.")
         if variants.custom is not None:
             active = render_custom(spec.topic_key, variants.custom)
         else:

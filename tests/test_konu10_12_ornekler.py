@@ -333,6 +333,9 @@ def _run(spec, language: str, folder: Path):
     command = [sys.executable] if language == "Python" else ["Rscript"]
     warnings = ",".join(item for item in (os.environ.get("PYTHONWARNINGS", ""), AGG_SHOW) if item)
     environment = {**os.environ, "MPLBACKEND": "Agg", "PYTHONWARNINGS": warnings}
+    if language == "R":
+        locale = "English_United States.utf8" if sys.platform == "win32" else "C.UTF-8"
+        environment.update(LANG=locale, LC_ALL=locale)
     return subprocess.run(command + [path.name], cwd=folder, capture_output=True, encoding="utf-8", errors="replace",
                           timeout=300, env=environment)
 

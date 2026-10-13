@@ -38,7 +38,9 @@ def _experiments() -> list:
 
 EXPERIMENTS = _experiments()
 UTF8_OUTPUT = 'sys.stdout.reconfigure(encoding="utf-8")'
-R_ENVIRONMENT = dict(os.environ, LANG="C.UTF-8", LC_ALL="C.UTF-8")
+# R on Windows uses UCRT locale names; Linux's C.UTF-8 raises startup warnings.
+R_LOCALE = "English_United States.utf8" if sys.platform == "win32" else "C.UTF-8"
+R_ENVIRONMENT = dict(os.environ, LANG=R_LOCALE, LC_ALL=R_LOCALE)
 
 
 def _checks(spec) -> int:

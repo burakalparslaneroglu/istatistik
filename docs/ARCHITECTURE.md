@@ -13,6 +13,11 @@ sezgi kurar ve kavramları sınar.
 - `topics/`: Streamlit bileşenleri ve öğrenciye gösterilen metin.
 - `tests/`: sözleşme, sayısal doğruluk, üretilen kod ve AppTest denetimleri.
 
+Sunum URL'lerinin hedef doğrulaması `core/navigation.py`, Streamlit bağlantısı
+`topics/navigation_ui.py` içindedir. Ortak kabuk bileşenlerden önce URL başlangıcını uygular;
+konu sekmeleri `key` ve `on_change="rerun"` ile seçili sekmeyi izler. URL aynı kaldığında
+öğrencinin sonraki seçimleri korunur. Alanlar ve oturum davranışı: [SUNUM_BAGLANTILARI.md](SUNUM_BAGLANTILARI.md).
+
 ## Yeni yapı (Konu 1–12)
 
 | Dosya | Görev |

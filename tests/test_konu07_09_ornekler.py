@@ -337,8 +337,12 @@ def _run(spec, language: str, folder: Path):
     path = folder / script_filename(spec, language)
     path.write_text(render_script(spec, language), encoding="utf-8")
     command = [sys.executable] if language == "Python" else ["Rscript"]
+    environment = {**__import__("os").environ, "MPLBACKEND": "Agg"}
+    if language == "R":
+        locale = "English_United States.utf8" if sys.platform == "win32" else "C.UTF-8"
+        environment.update(LANG=locale, LC_ALL=locale)
     return subprocess.run(command + [path.name], cwd=folder, capture_output=True, encoding="utf-8", errors="replace",
-                          timeout=300, env={**__import__("os").environ, "MPLBACKEND": "Agg", "LANG": "C.UTF-8"})
+                          timeout=300, env=environment)
 
 
 @pytest.mark.parametrize("changes", [

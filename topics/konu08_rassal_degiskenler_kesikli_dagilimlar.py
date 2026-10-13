@@ -22,7 +22,7 @@ TOPIC_KEY = "konu08"
 
 def render() -> None:
     render_topic_header(TOPIC_KEY)
-    application, intuition, self_test = st.tabs(("Uygulama", "Sezgi", "Kendini sına"))
+    application, intuition, self_test = st.tabs(("Uygulama", "Sezgi", "Kendini sına"), key=f"{TOPIC_KEY}_tab", on_change="rerun")
     with application:
         render_lab(get_lab(TOPIC_KEY))
     with intuition:
