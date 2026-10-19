@@ -3,7 +3,7 @@
 Ders notlarındaki adımlar (§5.1–§5.13) aynı numaralarla, verisi değiştirilebilir biçimde yazılır. Notlarda her adımın
 kendi küçük veri seti vardır; genel uygulamada yayılım ölçüleri tek bir sayısal değişken üzerinde hesaplanır. İki grubun
 karşılaştırması (Adım 1–2) tam iki kategorili bir grup sütunuyla, değişim katsayılarının karşılaştırması (Adım 5) ile
-kovaryans ve korelasyon (Adım 10–11) ikinci bir sayısal sütunla kurulur. Alternatif örnek kurgusal bir kargo verisidir;
+kovaryans ve korelasyon (Adım 11–12) ikinci bir sayısal sütunla kurulur. Alternatif örnek kurgusal bir kargo verisidir;
 "kendi verini yükle" seçeneğinde aynı adımlar öğrencinin dosyasıyla kurulur. Notlardaki uygulama (``core.labs.konu05``)
 değişmez.
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 from decimal import Context, Decimal, localcontext
 from functools import cache
+from fractions import Fraction
 
 import numpy as np
 import pandas as pd
@@ -38,6 +39,8 @@ from core.labs.ornek import (
     kesin,
     kesin_esit,
     kesin_yuvarla,
+    kesir_esit,
+    kesir_ondalik,
     liste,
     md,
     ondalik,
@@ -80,6 +83,7 @@ from core.labs.spec import (
     Subset,
     TableTarget,
 )
+from core.labs.shape import MOMENT_LABELS, moment_operations
 
 TITLE = "Değişkenlik, dağılım ve ilişki ölçülerini hesaplamak"
 SAYISAL, GRUP, IKINCI = "sayisal", "grup", "ikinci"
@@ -267,7 +271,7 @@ def _context(case: Case) -> dict:
     squares_check, variance_check, std_check = _check_bounds(n, noise, std)
     taken = set(case.data.columns) | set(case.labels)
     names = {}
-    for key in ("sapma", "sapma_kare", "z", "aykiri", "icinde_2", "icinde_3", "carpim"):
+    for key in ("sapma", "sapma_kare", "sapma_kup", "sapma_dort", "z", "aykiri", "icinde_2", "icinde_3", "carpim"):
         names[key] = free_name(key, taken)
         taken.add(names[key])
     return {
@@ -286,7 +290,7 @@ def _context(case: Case) -> dict:
 
 
 def _groups(case: Case, ctx: dict) -> dict | None:
-    """Adım 1, 2, 4, 6 ve 9'un iki grubu: kategori adları, gözlem sayıları, kesin ölçüler ve gösterim basamakları
+    """Adım 1, 2, 4, 7 ve 10'un iki grubu: kategori adları, gözlem sayıları, kesin ölçüler ve gösterim basamakları
     (gruptaki değerlerin büyüklüğüne göre güvenilir basamakla sınırlı)."""
 
     if not case.has(GRUP):
@@ -318,7 +322,7 @@ def _groups(case: Case, ctx: dict) -> dict | None:
 
 
 def _pair(case: Case, ctx: dict) -> dict | None:
-    """Adım 5, 10 ve 11'in iki sayısal değişkeni: ikinci sütunda değeri olan gözlemler.
+    """Adım 5, 11 ve 12'nin iki sayısal değişkeni: ikinci sütunda değeri olan gözlemler.
 
     ``problem``: kovaryans ve korelasyon hesaplanmaz (üçten az gözlem; değerler büyüklüklerine göre çok yakın).
     ``constant``: bir sütunun bu gözlemlerdeki bütün değerleri aynı; kovaryans sıfırdır, korelasyon tanımsızdır."""
@@ -496,7 +500,7 @@ def _step2(case: Case, ctx: dict, groups: dict | None) -> LabStep:
         checks=_kept(*checks),
         takeaway=(
             f"{compare} Ancak değişim aralığı yalnız iki uç gözleme dayanır; tek bir çok büyük değer onu belirgin "
-            "biçimde büyütebilir (§5.2). Adım 8'de uç gözlemleri IQR ile belirleyeceğiz."
+            "biçimde büyütebilir (§5.2). Adım 9'da uç gözlemleri IQR ile belirleyeceğiz."
         ),
     )
 
@@ -643,16 +647,16 @@ def _step4(case: Case, ctx: dict, groups: dict | None) -> LabStep:
 
 
 def _cv_bound(cv: Decimal, mean: Decimal, std: Decimal, noise: float, std_bound: float) -> float:
-    """CV = 100·s/x̄ için olası kayan nokta farkı (paydanın ve payın farklarından)."""
+    """CV = 100·s/|x̄| için olası kayan nokta farkı (paydanın ve payın farklarından)."""
 
     m, s = abs(float(mean)), float(std)
     return 100 * (std_bound / m + s * noise / (m * m)) + 4 * EPS * abs(float(cv))
 
 
 def _cv_usable(values: pd.Series, mean: Decimal) -> bool:
-    """Değişim katsayısı yalnız negatif olmayan ve ortalaması pozitif değişkende anlamlıdır (notlar §5.5)."""
+    """Hesaplanabilirlik; ölçme ölçeğinin uygunluğuna ilişkin bir karar değildir (§5.5)."""
 
-    return bool(mean > 0 and float(values.min()) >= 0)
+    return bool(mean != 0 and float(values.mean()) != 0)
 
 
 def _cv_pair(pair: dict | None) -> bool:
@@ -672,47 +676,47 @@ def _step5(case: Case, ctx: dict, pair: dict | None) -> LabStep:
     values = {}
     if usable_x:
         with localcontext(_EXACT):
-            cv = std / mean * 100
+            cv = std / abs(mean) * 100
         digits = _safe_digits(_mean_digits(cv, 1), _cv_bound(cv, mean, std, ctx["noise"], ctx["std_bound"]), cv)
         values["x"] = (cv, digits)
-        operations.append(Scalar("cv_x", E.mul(E.div(E.ref("std_sapma"), E.ref("ortalama")), 100),
+        operations.append(Scalar("cv_x", E.mul(E.div(E.ref("std_sapma"), E.absolute(E.ref("ortalama"))), 100),
                                  f"CV · {label}", decimals=digits, percent=True))
         checks.append(_check("cv_x", f"{label}: CV (%)", digits,
                              _cv_bound(cv, mean, std, ctx["noise"], ctx["std_check"]), cv))
-        parts.append(f"x = “{md(label)}”: $CV = s/\\bar{{x}} \\times 100 {kesin_esit(cv, digits)} "
+        parts.append(f"x = “{md(label)}”: $CV = s/|\\bar{{x}}| \\times 100 {kesin_esit(cv, digits)} "
                      f"\\%{_math(cv, digits)}$")
     else:
-        notes.append(f"“{md(label)}” sütununda negatif değer var ya da ortalama pozitif değil; CV bu değişken için "
-                     "anlamlı değildir.")
+        notes.append(f"“{md(label)}” sütununda ortalama sıfırdır ya da hesap duyarlığında sıfırdan ayrılamaz; "
+                     "CV hesaplanamaz.")
     if usable_y:
         y_label, frame, y = pair["label"], pair["frame"], pair["y"]
         with localcontext(_EXACT):
-            cv_y = pair["std_y"] / pair["mean_y"] * 100
+            cv_y = pair["std_y"] / abs(pair["mean_y"]) * 100
         bound = _cv_bound(cv_y, pair["mean_y"], pair["std_y"], pair["noise_y"], pair["std_y_bound"])
         digits_y = _safe_digits(_mean_digits(cv_y, 1), bound, cv_y)
         values["y"] = (cv_y, digits_y)
         operations = list(pair["load"]) + operations + [
             Statistic(frame, y, "mean", "ortalama_y", "Ortalama ȳ", decimals=pair["digits_y"]),
             Statistic(frame, y, "std", "std_y", "Standart sapma s_y", decimals=pair["std_y_digits"]),
-            Scalar("cv_y", E.mul(E.div(E.ref("std_y"), E.ref("ortalama_y")), 100), f"CV · {y_label}",
+            Scalar("cv_y", E.mul(E.div(E.ref("std_y"), E.absolute(E.ref("ortalama_y"))), 100), f"CV · {y_label}",
                    decimals=digits_y, percent=True),
         ]
         checks.append(_check("cv_y", f"{y_label}: CV (%)", digits_y,
                              _cv_bound(cv_y, pair["mean_y"], pair["std_y"], pair["noise_y"], pair["std_y_check"]),
                              cv_y))
         used = f" (ikinci sütunda değeri olan {pair['n']} gözlem)" if pair["skipped"] else ""
-        parts.append(f"y = “{md(y_label)}”{used}: $CV = s_y/\\bar{{y}} \\times 100 {kesin_esit(cv_y, digits_y)} "
+        parts.append(f"y = “{md(y_label)}”{used}: $CV = s_y/|\\bar{{y}}| \\times 100 {kesin_esit(cv_y, digits_y)} "
                      f"\\%{_math(cv_y, digits_y)}$")
     elif second:
-        notes.append(f"“{md(pair['label'])}” sütununda negatif değer var ya da ortalama pozitif değil; CV bu değişken "
-                     "için anlamlı değildir.")
+        notes.append(f"“{md(pair['label'])}” sütununda ortalama sıfırdır ya da hesap duyarlığında sıfırdan "
+                     "ayrılamaz; CV hesaplanamaz.")
     elif pair is not None:
         notes.append(f"İkinci sütunun CV'si bu adımda hesaplanmaz: {pair['reason']}.")
     if not operations:
-        return _blocked(5, title, note, " ".join(notes) + " CV, sıfırın anlamlı olduğu oran ölçekli ve pozitif "
-                                                         "değişkenlerde kullanılır (§5.5).")
+        return _blocked(5, title, note, " ".join(notes) + " Paydadaki mutlak değer sıfır ortalama sorununu "
+                        "çözmez (§5.5).")
     lead = ("Ortalamaları ve ölçü birimleri farklı iki değişkenin yayılımı standart sapmayla değil, ortalamaya göre "
-            "karşılaştırılır: $CV = (s/\\bar{x}) \\times 100$.")
+            "karşılaştırılır: $CV = (s/|\\bar{x}|) \\times 100$.")
     if pair is None:
         lead += " İkinci bir sayısal sütun seçerseniz iki değişkenin CV'si karşılaştırılır."
     if len(values) == 2:
@@ -729,8 +733,15 @@ def _step5(case: Case, ctx: dict, pair: dict | None) -> LabStep:
                     "birimsizdir. CV, sıfırın anlamlı olduğu oran ölçekli değişkenlerde kullanılır; ortalama sıfıra "
                     "yakınsa yanıltır (§5.5).")
     else:
-        takeaway = ("CV, standart sapmanın ortalamanın yüzde kaçı olduğunu söyler ve birimsizdir. Sıfırın anlamlı "
+        takeaway = ("CV, standart sapmanın mutlak ortalamanın yüzde kaçı olduğunu söyler ve birimsizdir. Sıfırın anlamlı "
                     "olduğu oran ölçekli değişkenlerde kullanılır; ortalama sıfıra yakınsa yanıltır (§5.5).")
+    takeaway += (
+        " Burada payda ortalamanın mutlak değeridir; bu biçim göreli standart sapma (RSD) olarak da adlandırılır. "
+        "CV, y = a·x (a ≠ 0) ölçeklemesinde değişmez; sabit eklenince genellikle değişir. "
+        "Anlamlı yorum için mutlak sıfırı olan oransal ölçek ve sıfırdan yeterince uzak ortalama gerekir. "
+        "Sıfıra yakınlık için evrensel bir sayısal eşik yoktur; negatif veya karışık işaretli veride mutlak "
+        "paydayla bir sayı hesaplanabilmesi, bu sayının bağlamda anlamlı bir CV olduğu anlamına gelmez."
+    )
     extra = (" " + " ".join(notes)) if notes else ""
     return LabStep(
         number=5,
@@ -743,12 +754,74 @@ def _step5(case: Case, ctx: dict, pair: dict | None) -> LabStep:
     )
 
 
+def _step6(case: Case, ctx: dict) -> LabStep:
+    """Kısa ondalık veriden kesin momentler; sonuç hesabı ortak Python/R işlemlerinden gelir."""
+    n = ctx["n"]
+    xs = [Fraction(value) for value in ctx["xs"]]
+    center = sum(xs) / n
+    deviations = [value - center for value in xs]
+    moments = {r: sum(value ** r for value in deviations) / n for r in (2, 3, 4)}
+    m2, m3, m4 = (moments[r] for r in (2, 3, 4))
+    b2 = m4 / m2 ** 2
+    exact = {"bicim_m2": m2, "bicim_m3": m3, "bicim_m4": m4,
+             "bicim_b2": b2, "bicim_g2": b2 - 3}
+    with localcontext(_WIDE):
+        dm2, dm3 = kesir_ondalik(m2), kesir_ondalik(m3)
+        g1 = dm3 / (dm2 * dm2.sqrt())
+    # g₁ ancak m₂'nin karekökü rasyonelse tam kesirle karşılaştırılabilir.
+    root_n, root_d = math.isqrt(m2.numerator), math.isqrt(m2.denominator)
+    if root_n ** 2 == m2.numerator and root_d ** 2 == m2.denominator:
+        exact["bicim_g1"] = m3 / (m2 * Fraction(root_n, root_d))
+    elif m3 == 0:
+        exact["bicim_g1"] = Fraction(0)
+    decimal_values = {name: kesir_ondalik(value) for name, value in exact.items()}
+    decimal_values.setdefault("bicim_g1", g1)
+    # Sapma hatasını kuvvetlere ve standartlaştırılmış oranlara taşıyan muhafazakâr sınır.
+    noise, dev = ctx["noise"], ctx["max_dev"]
+    bounds = {f"bicim_m{r}": r * noise * dev ** (r - 1)
+              + (math.log2(n) + 5) * EPS * dev ** r for r in (2, 3, 4)}
+    f2 = float(m2)
+    bounds["bicim_g1"] = bounds["bicim_m3"] / f2 ** 1.5 + 1.5 * abs(float(g1)) * bounds["bicim_m2"] / f2
+    bounds["bicim_b2"] = bounds["bicim_m4"] / f2 ** 2 + 2 * float(b2) * bounds["bicim_m2"] / f2
+    bounds["bicim_g2"] = bounds["bicim_b2"]
+    digits = {name: _safe_digits(3, bounds[name], value) for name, value in decimal_values.items()}
+    shown = []
+    for name, symbol in (("bicim_m2", "m_2"), ("bicim_m3", "m_3"), ("bicim_m4", "m_4"),
+                         ("bicim_g1", "g_1"), ("bicim_b2", "b_2"), ("bicim_g2", "g_2")):
+        relation = kesir_esit(exact[name], digits[name]) if name in exact else r"\approx"
+        shown.append(f"${symbol} {relation} {_math(decimal_values[name], digits[name])}$")
+    names = ctx["names"]
+    skew = "sıfırdır" if m3 == 0 else ("pozitiftir" if m3 > 0 else "negatiftir")
+    excess = "sıfırdır" if b2 == 3 else ("pozitiftir" if b2 > 3 else "negatiftir")
+    return LabStep(
+        number=6, title="Çarpıklık ve basıklık: merkezî momentler", note=NoteRef("5.6"),
+        explanation=(
+            r"Merkezî momentler $m_r = \frac{1}{n}\sum_{i=1}^n(x_i-\bar{x})^r$ ile hesaplanır. "
+            r"Payda n'dir; örneklem varyansında kullanılan n − 1 değildir. "
+            r"$g_1=m_3/m_2^{3/2}$, $b_2=m_4/m_2^2$ ve $g_2=b_2-3$. "
+            + "; ".join(shown) + "."
+        ),
+        operations=moment_operations(case.frame, names["sapma"], names["sapma_kare"],
+                                     names["sapma_kup"], names["sapma_dort"], digits, signless=True),
+        checks=_kept(*(_check(name, MOMENT_LABELS[name], digits[name], bounds[name], value)
+                       for name, value in decimal_values.items())),
+        takeaway=(
+            f"Bu veride çarpıklık {skew}; fazla basıklık {excess}. "
+            "Pozitif g₁ sağa, negatif g₁ sola çarpıklık yönünde bir göstergedir; g₁ = 0 simetriyi kanıtlamaz. "
+            "Basıklık, ortalamadan uzak gözlemlerin dördüncü kuvvetli katkısıyla ilgilidir; yalnız tepe yüksekliği "
+            "değildir. Normal dağılımın referansı b₂ = 3, g₂ = 0'dır; bu değerlere eşitlik normalliği kanıtlamaz. "
+            "Bunlar yanlılık düzeltmesi yapılmamış betimsel katsayılardır. Sabit veride m₂ = 0 olduğundan "
+            "standartlaştırılmış katsayılar tanımsızdır (§5.6)."
+        ),
+    )
+
+
 def _z(value: Decimal, mean: Decimal, std: Decimal) -> Decimal:
     with localcontext(_EXACT):
         return (value - mean) / std
 
 
-def _step6(case: Case, ctx: dict, groups: dict | None) -> LabStep:
+def _step7(case: Case, ctx: dict, groups: dict | None) -> LabStep:
     x, d, names = ctx["x"], ctx["d"], ctx["names"]
     mean, std = ctx["mean"], ctx["std"]
     digits, std_digits = ctx["mean_digits"], ctx["std_digits"]
@@ -797,9 +870,9 @@ def _step6(case: Case, ctx: dict, groups: dict | None) -> LabStep:
     far = sum(1 for value in ctx["xs"] if abs(_z(value, mean, std)) > 3)
     far_text = ("Bu veride |z| > 3 olan gözlem yok." if far == 0 else
                 f"Bu veride |z| > 3 olan gözlem sayısı: {far}; çan biçimli veride böyle gözlemler dikkatle incelenir "
-                "(Adım 8).")
+                "(Adım 9).")
     return LabStep(
-        number=6,
+        number=7,
         title="z-skoru ve göreli konum",
         note=NoteRef("5.7"),
         explanation=(
@@ -849,7 +922,7 @@ def _inside(ctx: dict, k: int, slack: float) -> int:
     return int(np.sum(np.abs(values - mean) <= k * std * (1 + slack)))
 
 
-def _step7(case: Case, ctx: dict) -> LabStep:
+def _step8(case: Case, ctx: dict) -> LabStep:
     x, n, names = ctx["x"], ctx["n"], ctx["names"]
     indicators = []
     operations = [
@@ -882,7 +955,7 @@ def _step7(case: Case, ctx: dict) -> LabStep:
     shape = ("Ampirik kural yalnız yaklaşık çan biçimli dağılımlar için yaklaşık oranlar verir; verideki paylar bu "
              f"oranlardan ayrılabilir ({'; '.join(comparison)}).")
     return LabStep(
-        number=7,
+        number=8,
         title="Chebyshev eşitsizliği",
         note=NoteRef("5.8"),
         explanation=(
@@ -928,7 +1001,7 @@ def _fences(ctx: dict) -> dict:
             "lower_f": lower_f, "upper_f": upper_f, "outliers": outliers, "decimals": decimals, "bound": bound}
 
 
-def _step8(case: Case, ctx: dict, fences: dict) -> LabStep:
+def _step9(case: Case, ctx: dict, fences: dict) -> LabStep:
     x, n, d, label, names = ctx["x"], ctx["n"], ctx["d"], ctx["label"], ctx["names"]
     q1, q3, iqr, lower, upper = (fences[key] for key in ("q1", "q3", "iqr", "lower", "upper"))
     bound, rounded = fences["bound"], fences["decimals"]
@@ -953,7 +1026,7 @@ def _step8(case: Case, ctx: dict, fences: dict) -> LabStep:
     aykiri = names["aykiri"]
     axis = _axis(min(ctx["low_f"], fences["lower_f"]), max(ctx["high_f"], fences["upper_f"]))
     return LabStep(
-        number=8,
+        number=9,
         title="IQR ile aykırı değer",
         note=NoteRef("5.9"),
         explanation=(
@@ -1042,7 +1115,7 @@ def _overall_label(groups: dict | None, label: str) -> str:
     return free_name("Tümü", names)
 
 
-def _step9(case: Case, ctx: dict, groups: dict | None, fences: dict) -> LabStep:
+def _step10(case: Case, ctx: dict, groups: dict | None, fences: dict) -> LabStep:
     x, d, label = ctx["x"], ctx["d"], ctx["label"]
     overall = _overall_label(groups, label)
     series = [(case.frame, x, overall)]
@@ -1079,7 +1152,7 @@ def _step9(case: Case, ctx: dict, groups: dict | None, fences: dict) -> LabStep:
         group_text = (" Grupların kutuları aynı eksende çizilir: kutu grafikleri iki grubun merkezini, yayılımını ve "
                       "aykırı değerlerini aynı ölçekte karşılaştırır.")
     return LabStep(
-        number=9,
+        number=10,
         title="Beş sayı özeti ve kutu grafiği",
         note=NoteRef("5.10"),
         explanation=(
@@ -1111,12 +1184,12 @@ def _corr_words(corr: Decimal) -> str:
     return f"örneklemdeki doğrusal ilişkinin yönü {direction}"
 
 
-def _step10(case: Case, ctx: dict, pair: dict | None, loaded: bool) -> LabStep:
+def _step11(case: Case, ctx: dict, pair: dict | None, loaded: bool) -> LabStep:
     title, note = "Kovaryans", "5.11"
     if pair is None:
-        return _missing(10, title, note, "“İkinci sayısal değişken (y)”, ör. satış ya da süre")
+        return _missing(11, title, note, "“İkinci sayısal değişken (y)”, ör. satış ya da süre")
     if "problem" in pair:
-        return _blocked(10, title, note, pair["problem"])
+        return _blocked(11, title, note, pair["problem"])
     x, y, frame, n = ctx["x"], pair["y"], pair["frame"], pair["n"]
     carpim = ctx["names"]["carpim"]
     label, y_label = ctx["label"], pair["label"]
@@ -1139,7 +1212,7 @@ def _step10(case: Case, ctx: dict, pair: dict | None, loaded: bool) -> LabStep:
         elif positive == 0:
             products += "; pozitif çarpım yok"
     return LabStep(
-        number=10,
+        number=11,
         title=title,
         note=NoteRef(note),
         explanation=(
@@ -1177,20 +1250,20 @@ def _step10(case: Case, ctx: dict, pair: dict | None, loaded: bool) -> LabStep:
     )
 
 
-def _step11(case: Case, ctx: dict, pair: dict | None) -> LabStep:
+def _step12(case: Case, ctx: dict, pair: dict | None) -> LabStep:
     title, note = "Korelasyon katsayısı", "5.12"
     if pair is None:
-        return _missing(11, title, note, "“İkinci sayısal değişken (y)”, ör. satış ya da süre")
+        return _missing(12, title, note, "“İkinci sayısal değişken (y)”, ör. satış ya da süre")
     if "problem" in pair:
-        return _blocked(11, title, note, pair["problem"])
+        return _blocked(12, title, note, pair["problem"])
     if "constant" in pair:
-        return _blocked(11, title, note, pair["constant"])
+        return _blocked(12, title, note, pair["constant"])
     x, y, frame = ctx["x"], pair["y"], pair["frame"]
     corr, digits = pair["corr"], pair["corr_digits"]
     std_x, std_y = pair["std_x"], pair["std_y"]
     sx_digits, sy_digits = pair["std_x_digits"], pair["std_y_digits"]
     return LabStep(
-        number=11,
+        number=12,
         title=title,
         note=NoteRef(note),
         explanation=(
@@ -1222,7 +1295,7 @@ def _step11(case: Case, ctx: dict, pair: dict | None) -> LabStep:
     )
 
 
-def _step12(case: Case, ctx: dict, fences: dict) -> LabStep:
+def _step13(case: Case, ctx: dict, fences: dict) -> LabStep:
     x, d = ctx["x"], ctx["d"]
     mean, digits = ctx["mean"], ctx["mean_digits"]
     median, _ = _percentile(ctx["ordered"], 50)
@@ -1244,7 +1317,7 @@ def _step12(case: Case, ctx: dict, fences: dict) -> LabStep:
     else:
         position = "ortalama ile medyan eşittir"
     return LabStep(
-        number=12,
+        number=13,
         title="Tek sayı yerine istatistiksel profil",
         note=NoteRef("5.13"),
         explanation=(
@@ -1284,13 +1357,14 @@ def build(case: Case) -> LabSpec:
     fences = _fences(ctx)
     steps = (
         _step1(case, ctx, groups), _step2(case, ctx, groups), _step3(case, ctx), _step4(case, ctx, groups),
-        _step5(case, ctx, pair), _step6(case, ctx, groups), _step7(case, ctx), _step8(case, ctx, fences),
-        _step9(case, ctx, groups, fences), _step10(case, ctx, pair, _cv_pair(pair)), _step11(case, ctx, pair),
-        _step12(case, ctx, fences),
+        _step5(case, ctx, pair), _step6(case, ctx), _step7(case, ctx, groups), _step8(case, ctx), _step9(case, ctx, fences),
+        _step10(case, ctx, groups, fences), _step11(case, ctx, pair, _cv_pair(pair)), _step12(case, ctx, pair),
+        _step13(case, ctx, fences),
     )
     names = ctx["names"]
     labels = dict(case.labels)
-    for key, text in (("sapma", "Sapma xᵢ − x̄"), ("sapma_kare", "Kareli sapma (xᵢ − x̄)²"), ("z", "z-skoru"),
+    for key, text in (("sapma", "Sapma xᵢ − x̄"), ("sapma_kare", "Kareli sapma (xᵢ − x̄)²"), ("sapma_kup", "Küplü sapma (xᵢ − x̄)³"),
+                      ("sapma_dort", "Dördüncü kuvvetli sapma (xᵢ − x̄)⁴"), ("z", "z-skoru"),
                       ("aykiri", "Aykırı değer adayı (1: evet)"), ("icinde_2", "x̄ ± 2s içinde (1: evet)"),
                       ("icinde_3", "x̄ ± 3s içinde (1: evet)"), ("carpim", "(xᵢ − x̄)(yᵢ − ȳ)")):
         labels.setdefault(names[key], text)
@@ -1378,12 +1452,12 @@ def validate(case: Case) -> None:
 
 
 ROLES = (
-    Role(SAYISAL, "Sayısal değişken (x)", "sayisal", True, tuple(range(1, 13)),
+    Role(SAYISAL, "Sayısal değişken (x)", "sayisal", True, tuple(range(1, 14)),
          "Yayılım ölçülerinin değişkeni (ör. mesafe, süre, gelir); kovaryans ve korelasyonda yatay eksen."),
-    Role(GRUP, "Grup sütunu (iki kategorili)", "kategorik", False, (1, 2, 4, 6, 9),
+    Role(GRUP, "Grup sütunu (iki kategorili)", "kategorik", False, (1, 2, 4, 7, 10),
          "Tam iki kategorili sütun (ör. tedarikçi A ve B, iki şube); iki grubun yayılımı karşılaştırılır.",
          levels=(2, 2), suggest=True),
-    Role(IKINCI, "İkinci sayısal değişken (y)", "sayisal", False, (5, 10, 11),
+    Role(IKINCI, "İkinci sayısal değişken (y)", "sayisal", False, (5, 11, 12),
          "Kovaryans ve korelasyonun ikinci değişkeni (dikey eksen) ve değişim katsayısının karşılaştırması (ör. süre, "
          "satış).", suggest=True),
 )
@@ -1394,8 +1468,8 @@ CUSTOM = CustomLab(
     sample=sample,
     intro=(
         "Sayısal bir sütun içeren bir Excel (.xlsx) ya da CSV dosyası yükleyin. Sayısal değişken zorunludur. İki "
-        "grubun yayılımını karşılaştırmak için tam iki kategorili bir grup sütunu (Adım 1, 2, 4, 6 ve 9); değişim "
-        "katsayılarının karşılaştırması, kovaryans ve korelasyon için ikinci bir sayısal sütun (Adım 5, 10 ve 11) "
+        "grubun yayılımını karşılaştırmak için tam iki kategorili bir grup sütunu (Adım 1, 2, 4, 7 ve 10); değişim "
+        "katsayılarının karşılaştırması, kovaryans ve korelasyon için ikinci bir sayısal sütun (Adım 5, 11 ve 12) "
         "seçebilirsiniz. Sayısal değişkeni boş olan satırlar analizden çıkarılır; isteğe bağlı sütunlardaki boş "
         "hücreler yalnız o sütunu kullanan adımları etkiler."
     ),

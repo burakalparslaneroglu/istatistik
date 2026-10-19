@@ -231,6 +231,12 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
 
 - `Statistic`: `var` ve `std` örneklem ölçüleridir (payda n − 1; pandas `var()`/`std()`, R `var()`/`sd()`);
   `nunique` farklı değer sayısıdır. `PairStatistic`: örneklem kovaryansı (`cov`) ve Pearson korelasyonu (`corr`).
+- Konu 5 Adım 5'te CV = 100s/|x̄| (RSD biçimi) kullanılır; sıfır ortalamada hesaplanmaz. Negatif/karışık işaret
+  hesaplamayı tek başına engellemez; oran ölçeği ve sıfırdan uzak ortalama koşulları ayrıca açıklanır. Adım 6
+  (`shape.moment_operations`) n paydalı m₂, m₃, m₄ ile g₁ = m₃/m₂^(3/2), b₂ = m₄/m₂², g₂ = b₂ − 3'ü üretir.
+  Yanlılık düzeltmesi yapılmaz. Sabit veri genel uygulamaya girmeden reddedilir; bu katsayılar için m₂ > 0 gerekir.
+  Metinlerdeki tamlık ve işaret kararları kısa ondalık verinin kesin kesirlerinden gelir; Python/R işlemleri
+  aynı `Derive`/`Statistic`/`Scalar` tanımından üretilir. Eski Adım 6–12, Adım 7–13 olmuştur.
 - `BoxSummary` ve `BoxPlot`: çeyrekler ders kuralıyla (`yuzdelik`); bıyıklar Q₁ − 1,5·IQR ve Q₃ + 1,5·IQR
   sınırlarının içindeki en uç gözlemlere uzanır, dışındaki gözlemler ayrı noktadır. matplotlib `boxplot` ve R
   `boxplot()` çeyrekleri kendi kurallarıyla hesapladığı için kullanılmaz: Python kutuyu `kutu_ozeti`nden
@@ -240,7 +246,7 @@ Notlardaki örnek varsayılandır; onun tanımı (`core/labs/konuNN.py`), üreti
 - `JoinColumns`: aynı satır adlı tabloların sütunlarını yan yana toplar (ör. gözlenen oran, Chebyshev alt sınırı,
   ampirik kural). `Histogram` bir veri çerçevesini de çizebilir; başvuru çizgisi sayı ya da skaler adıdır.
 - Genel uygulama (`ornek_konu05`): yayılım ölçüleri tek sayısal sütunda; tam iki kategorili grup sütunu (Adım 1,
-  2, 4, 6, 9) ve ikinci sayısal sütun (Adım 5, 10, 11) isteğe bağlıdır. Metindeki ortalama, kareler toplamı,
+  2, 4, 7, 10) ve ikinci sayısal sütun (Adım 5, 11, 12) isteğe bağlıdır. Metindeki ortalama, kareler toplamı,
   varyans, kovaryans ve korelasyon kesin ondalık aritmetikle n·Σx² − (Σx)² özdeşliğinden kurulur (sonlu sonuç tam
   kalır; tam doğrusal ilişkide r = ±1, orantılı sütunlarda CV'ler eşit). Gösterim basamağı kayan noktalı hesabın
   olası farkıyla sınırlanır (`_safe_digits`: 10⁻ᵈ ≥ 5·fark; `_noise`, `_std_bounds`); fark basamak sıfırda bile

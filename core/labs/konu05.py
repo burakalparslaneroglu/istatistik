@@ -1,11 +1,10 @@
 """Konu 5 uygulaması: değişkenlik, dağılımın şekli ve iki değişken arasındaki ilişki.
 
 Ders notlarının çözümlü örnekleri: §5.1 (iki tedarikçi), §5.2 (değişim aralığı), §5.3 (Tablo 5.1: sapmalar
-ve varyans), §5.4 (standart sapma), §5.5 (değişim katsayısı), §5.7 (z-skoru), §5.8 (Chebyshev), §5.9 (IQR ile
+ve varyans), §5.4 (standart sapma), §5.5 (değişim katsayısı), §5.6 (çarpıklık ve basıklık), §5.7 (z-skoru), §5.8 (Chebyshev), §5.9 (IQR ile
 aykırı değer), §5.10 (beş sayı özeti ve kutu grafiği), §5.11 (Tablo 5.2: kovaryans), §5.12 (korelasyon) ve
 §5.13 (istatistiksel profil). Buradaki her ``Check`` notlarda basılı bir sayıdır; değer notlardan
-kopyalanmıştır, hesaplanmamıştır. §5.6 (çarpıklık) sayısal örnek içermez; Sezgi sekmesindeki deneyler bu
-bölümü simülasyonla işler.
+kopyalanmıştır, hesaplanmamıştır. §5.6 aynı beş gözlemi momentler için yeniden kullanır.
 
 Çeyrekler Konu 4'teki ders kuralıyla hesaplanır: L_p = (p/100)(n + 1), tam sayı değilse doğrusal ara değer.
 Varyans, standart sapma ve kovaryansın paydası n − 1'dir (pandas ve R'nin varsayılanı).
@@ -14,6 +13,7 @@ Varyans, standart sapma ve kovaryansın paydası n − 1'dir (pandas ve R'nin va
 from __future__ import annotations
 
 from core.labs import expr as E
+from core.labs.shape import MOMENT_LABELS, moment_operations
 from core.labs.spec import (
     BoxPlot,
     BoxSummary,
@@ -115,7 +115,7 @@ STEPS = (
         ),
         takeaway=(
             "B'nin teslim süreleri daha geniş bir aralığa yayılır. Ancak değişim aralığı yalnız iki uç gözleme "
-            "dayanır; tek bir çok büyük değer onu belirgin biçimde büyütebilir (§5.2). Adım 8'deki gelir "
+            "dayanır; tek bir çok büyük değer onu belirgin biçimde büyütebilir (§5.2). Adım 9'daki gelir "
             "verisinde bunu göreceğiz."
         ),
     ),
@@ -188,31 +188,62 @@ STEPS = (
         note=NoteRef("5.5", objects=("Şekil 5.6",)),
         explanation=(
             "Ortalamaları çok farklı iki değişkenin yayılımı standart sapmayla değil, ortalamaya göre "
-            "karşılaştırılır: $CV = (s/\\bar{x}) \\times 100$. A değişkeninde $\\bar{x} = 80$, $s = 8$; B "
-            "değişkeninde $\\bar{x} = 10$, $s = 2$."
+            "karşılaştırılır: $CV = (s/|\\bar{x}|) \\times 100$. Pozitif ortalamada klasik CV ile aynıdır; "
+            "mutlak paydalı biçim RSD olarak da adlandırılır. A değişkeninde $\\bar{x} = 80$, $s = 8$; B "
+            "değişkeninde $\\bar{x} = 10$, $s = 2$. A yalnız ters işaretle kaydedilirse ortalama −80, "
+            "standart sapma yine 8 ve mutlak paydalı CV yine %10 olur."
         ),
         operations=(
             Scalar("ortalama_1", E.const(80), "A değişkeni: ortalama", decimals=0),
             Scalar("std_1", E.const(8), "A değişkeni: standart sapma", decimals=0),
-            Scalar("cv_1", E.mul(E.div(E.ref("std_1"), E.ref("ortalama_1")), 100), "A değişkeni: CV", decimals=0,
+            Scalar("cv_1", E.mul(E.div(E.ref("std_1"), E.absolute(E.ref("ortalama_1"))), 100), "A değişkeni: CV", decimals=0,
                    percent=True),
             Scalar("ortalama_2", E.const(10), "B değişkeni: ortalama", decimals=0),
             Scalar("std_2", E.const(2), "B değişkeni: standart sapma", decimals=0),
-            Scalar("cv_2", E.mul(E.div(E.ref("std_2"), E.ref("ortalama_2")), 100), "B değişkeni: CV", decimals=0,
+            Scalar("cv_2", E.mul(E.div(E.ref("std_2"), E.absolute(E.ref("ortalama_2"))), 100), "B değişkeni: CV", decimals=0,
                    percent=True),
+            Scalar("ortalama_ters", E.neg(E.ref("ortalama_1")), "Ters işaretle kaydedilen A: ortalama", decimals=0),
+            Scalar("cv_ters", E.mul(E.div(E.ref("std_1"), E.absolute(E.ref("ortalama_ters"))), 100),
+                   "Ters işaretle kaydedilen A: CV", decimals=0, percent=True),
         ),
         checks=(
             _scalar("cv_1", 10, "CV = 8/80 × 100 (%)", 0),
             _scalar("cv_2", 20, "CV = 2/10 × 100 (%)", 0),
+            _scalar("ortalama_ters", -80, "Ters işaretli ortalama", 0),
+            _scalar("cv_ters", 10, "CV = 8/|−80| × 100 (%)", 0),
         ),
         takeaway=(
             "Mutlak standart sapma A'da büyüktür (8 > 2), ama kendi ortalamasına göre B daha değişkendir (%20 > %10). "
-            "CV, sıfırın anlamlı olduğu oran ölçekli değişkenlerde kullanılır; ortalama sıfıra yakınsa yanıltır "
-            "(§5.5)."
+            "CV yorumu mutlak sıfırı anlamlı oran ölçeği ve sıfırdan yeterince uzak ortalama gerektirir. "
+            "Ortalama sıfırsa tanımsız, sıfıra yakınsa duyarlıdır; negatif ortalamada mutlak değer almak yorumun "
+            "uygunluğunu sağlamaz. y = ax (a ≠ 0) birim/işaret değişiminde korunur; y = x + b ötelemesinde "
+            "genellikle değişir (§5.5)."
         ),
     ),
     LabStep(
         number=6,
+        title="Çarpıklık ve basıklık: merkezî momentler",
+        note=NoteRef("5.6"),
+        explanation=(
+            "§5.3'teki 4, 6, 8, 10, 12 verisini yeniden kullanıyoruz. "
+            "$m_r = n^{-1} \\sum_i (x_i - \\bar{x})^r$ (r = 2, 3, 4); "
+            "$g_1 = m_3/m_2^{3/2}$, $b_2 = m_4/m_2^2$, $g_2 = b_2 - 3$. "
+            "Momentlerin paydası n'dir; örneklem varyansı s²'nin paydası n − 1'dir. "
+            "Burada m₂ = 8, m₃ = 0, m₄ = 108,8 ve g₁ = 0, b₂ = 1,7, g₂ = −1,3 bulunur."
+        ),
+        operations=moment_operations("orneklem", "sapma", "sapma_kare", "sapma_kup", "sapma_dort"),
+        checks=tuple(_scalar(name, value, MOMENT_LABELS[name], digits) for name, value, digits in (
+            ("bicim_m2", 8, 0), ("bicim_m3", 0, 0), ("bicim_m4", 108.8, 1),
+            ("bicim_g1", 0, 0), ("bicim_b2", 1.7, 1), ("bicim_g2", -1.3, 1),
+        )),
+        takeaway=(
+            "Çarpıklık sıfırdır; basıklık normal başvurusundaki 3'ten farklıdır. Basıklık yalnız tepe sivriliği "
+            "değil, büyük uzaklıkların dördüncü kuvvetli katkısıyla ilgilidir. g₁ = 0 veya b₂ = 3 normal dağılım "
+            "kanıtı değildir. m₂ = 0 olduğunda katsayılar tanımsızdır; küçük örneklem düzeltmesi kullanmıyoruz (§5.6)."
+        ),
+    ),
+    LabStep(
+        number=7,
         title="z-skoru ve göreli konum",
         note=NoteRef("5.7", objects=("Şekil 5.8",)),
         explanation=(
@@ -233,7 +264,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=7,
+        number=8,
         title="Chebyshev eşitsizliği",
         note=NoteRef("5.8", objects=("Şekil 5.9",)),
         explanation=(
@@ -266,7 +297,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=8,
+        number=9,
         title="IQR ile aykırı değer",
         note=NoteRef("5.9", objects=("Şekil 5.10",)),
         explanation=(
@@ -305,7 +336,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=9,
+        number=10,
         title="Beş sayı özeti ve kutu grafiği",
         note=NoteRef("5.10", objects=("Şekil 5.11",)),
         explanation=(
@@ -336,7 +367,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=10,
+        number=11,
         title="Kovaryans",
         note=NoteRef("5.11", objects=("Tablo 5.2", "Şekil 5.13")),
         explanation=(
@@ -372,7 +403,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=11,
+        number=12,
         title="Korelasyon katsayısı",
         note=NoteRef("5.12", objects=("Şekil 5.15",)),
         explanation=(
@@ -400,7 +431,7 @@ STEPS = (
         ),
     ),
     LabStep(
-        number=12,
+        number=13,
         title="Tek sayı yerine istatistiksel profil",
         note=NoteRef("5.13", objects=("Şekil 5.18", "Tablo 5.3")),
         explanation=(
@@ -444,6 +475,8 @@ KONU05_LAB = LabSpec(
         ("x", "Gözlem xᵢ"),
         ("sapma", "Sapma xᵢ − x̄"),
         ("sapma_kare", "Kareli sapma (xᵢ − x̄)²"),
+        ("sapma_kup", "Küplü sapma (xᵢ − x̄)³"),
+        ("sapma_dort", "Dördüncü kuvvetli sapma (xᵢ − x̄)⁴"),
         ("gelir", "Gelir"),
         ("aykiri", "Aykırı değer adayı (1: evet)"),
         ("hafta", "Hafta"),

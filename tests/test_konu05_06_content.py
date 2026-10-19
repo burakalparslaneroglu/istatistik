@@ -73,7 +73,7 @@ def test_covariance_and_correlation_of_the_advertising_table() -> None:
 def test_box_plots_are_drawn_from_the_course_summary_in_both_languages() -> None:
     """matplotlib ve R'nin boxplot fonksiyonları çeyrekleri kendi kurallarıyla bulur; kod kullanmaz."""
 
-    python, r = render_step(KONU05_LAB, 9, "Python"), render_step(KONU05_LAB, 9, "R")
+    python, r = render_step(KONU05_LAB, 10, "Python"), render_step(KONU05_LAB, 10, "R")
     assert "kutu_ozeti" in python and ".boxplot(" not in python
     code = [line for line in r.splitlines() if not line.lstrip().startswith("#")]
     assert any("bxp(" in line for line in code) and not any("boxplot(" in line for line in code)

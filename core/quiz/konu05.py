@@ -167,16 +167,17 @@ QUESTIONS = (
         answer=TrueFalse(False),
         explanation=(
             "CV, sıfırın anlamlı bir başlangıç olduğu oran ölçekli değişkenlerde yorumlanır. Celsius'ta 0 °C "
-            "\"sıcaklık yok\" demek değildir; ortalama sıfıra yakınsa veya negatifse CV yanıltıcı olur (§5.5)."
+            "\"sıcaklık yok\" demek değildir. Mutlak ortalamayla hesaplamak bu ölçek sorununu çözmez; "
+            "ortalama sıfıra yakınsa oran ayrıca kararsızlaşır (§5.5)."
         ),
     ),
     Question(
-        key="d04", concept="esit-ortalama-medyan-simetri-kaniti-degil", note=_note("5.6"),
-        prompt="Ortalama ile medyanın eşit olması, dağılımın simetrik olduğunu kesin olarak gösterir.",
+        key="d04", concept="momentler-normallik-kaniti-degil", note=_note("5.6"),
+        prompt="g₁ = 0 ve b₂ = 3 bulunması, verinin normal dağılımdan geldiğini kesin olarak gösterir.",
         answer=TrueFalse(False),
         explanation=(
-            "Ortalama–medyan karşılaştırması bir yorum yardımcısıdır, kesin bir kural değildir. Dağılımın biçimi "
-            "histogram veya kutu grafiğiyle birlikte değerlendirilir (§5.6)."
+            "Bunlar normal dağılımın referans değerleridir; aynı üçüncü ve dördüncü standartlaştırılmış "
+            "momente sahip farklı dağılımlar olabilir. İki katsayı normalliği kanıtlamaz (§5.6)."
         ),
     ),
     Question(
@@ -235,15 +236,13 @@ QUESTIONS = (
         ),
     ),
     Question(
-        key="b03", concept="z-den-ham-degere", note=_note("5.7", "(5.7)"),
+        key="b03", concept="basiklik-ve-fazla-basiklik", note=_note("5.6"),
         prompt=(
-            "Ortalaması 50, standart sapması 6 olan bir sınavda z = −1,5 olan öğrencinin notu **(1)**, z = 2 olan "
-            "öğrencinin notu **(2)** olur."
+            "n paydalı merkezî momentler m₂ = 4 ve m₄ = 80 ise basıklık b₂ **(1)**, fazla basıklık g₂ **(2)** olur."
         ),
-        answer=FillBlanks((NumberBlank(41, 0.005, "41"), NumberBlank(62, 0.005, "62"))),
+        answer=FillBlanks((NumberBlank(5, 0.005, "5"), NumberBlank(2, 0.005, "2"))),
         explanation=(
-            "z = (x − x̄)/s eşitliğinden x = x̄ + z s: 50 − 1,5 × 6 = 41 ve 50 + 2 × 6 = 62. Negatif z ortalamanın "
-            "altında kalan bir gözlemi gösterir (§5.7)."
+            "b₂ = m₄/m₂² = 80/16 = 5; g₂ = b₂ − 3 = 2. Basıklık ile fazla basıklık arasında 3 fark vardır (§5.6)."
         ),
     ),
     Question(
@@ -273,7 +272,7 @@ QUESTIONS = (
     # --- Denklem yazma -----------------------------------------------------------
     Question(
         key="e01", concept="cv-formulu", note=_note("5.5", "(5.6)"),
-        prompt="Ortalaması $m$, standart sapması $s$ olan bir değişkenin değişim katsayısını yüzde olarak yazın.",
+        prompt="Pozitif ortalaması $m$, standart sapması $s$ olan bir değişkenin değişim katsayısını yüzde olarak yazın.",
         answer=Equation(
             lhs="CV",
             symbols=(Symbol("s", "s", "standart sapma", 1, 10), Symbol("m", "m", "ortalama", 20, 100)),
@@ -281,7 +280,7 @@ QUESTIONS = (
             shown="100\\,s/m",
         ),
         explanation=(
-            "CV = (s/x̄) × 100: standart sapma ortalamaya göre ölçeklenir. m = 80, s = 8 için %10; m = 10, s = 2 "
+            "Genel tanım CV = 100s/|x̄|; bu soruda m pozitif olduğu için |m| = m. m = 80, s = 8 için %10; m = 10, s = 2 "
             "için %20 (§5.5, (5.6))."
         ),
     ),
@@ -335,17 +334,18 @@ QUESTIONS = (
         ),
     ),
     Question(
-        key="e05", concept="iki-gozlemin-varyansi", note=_note("5.3", "(5.3)"),
-        prompt="İki gözlem $a$ ve $b$ olan bir örneklemin örneklem varyansını $a$ ve $b$ cinsinden yazın.",
+        key="e05", concept="moment-carpiklik-formulu", note=_note("5.6"),
+        prompt="n paydalı merkezî momentler $m_3=t$ ve $m_2=v>0$ ise betimsel çarpıklık katsayısını yazın.",
         answer=Equation(
-            lhs="s^2",
-            symbols=(Symbol("a", "a", "birinci gözlem", 0, 10), Symbol("b", "b", "ikinci gözlem", 11, 20)),
-            answer="(a - b)^2/2",
-            shown="(a - b)^2/2",
+            lhs="g_1",
+            symbols=(Symbol("t", "t", "üçüncü merkezî moment m₃", -10, 10),
+                     Symbol("v", "v", "ikinci merkezî moment m₂", 1, 8)),
+            answer="t/v^(3/2)",
+            shown="t/v^{3/2}",
         ),
         explanation=(
-            "x̄ = (a + b)/2; sapmalar ±(a − b)/2, kareleri toplamı (a − b)²/2. Payda n − 1 = 1 olduğu için "
-            "s² = (a − b)²/2 (§5.3, (5.3))."
+            "g₁ = m₃/m₂^(3/2) = t/v^(3/2). Buradaki m₂, n − 1 paydalı örneklem varyansı değildir; "
+            "iki moment de n paydasıyla hesaplanır (§5.6)."
         ),
     ),
 )

@@ -22,7 +22,7 @@ from core.labs.registry import get_lab
 from core.labs.runner import run_lab
 from core.labs.spec import BoxSummary, CompleteCases, DotPlot, Histogram, Selections, Subset
 
-ALLOWED_SUFFIXES = {"%88,9'dan", "1'e", "0'dır", "1'dir", "8'de", "4'teki", "%50'ye", "0,25'lik"}
+ALLOWED_SUFFIXES = {"%88,9'dan", "1'e", "0'dır", "1'dir", "8'de", "9'da", "4'teki", "%50'ye", "0,25'lik"}
 """Rakamdan sonra ek yalnız sabit ifadelerde (ör. "%88,9'dan küçük değildir", "|r| 1'e yaklaştıkça"); değişken
 sayılara ek getirilmez."""
 
@@ -79,6 +79,13 @@ def test_konu05_alternative_matches_a_direct_calculation() -> None:
     assert values["Güney: s"] == pytest.approx(np.std(south, ddof=1))
     assert values["Teslimat mesafesi (km): CV (%)"] == pytest.approx(100 * s / mean)
     assert values["Teslim süresi (saat): CV (%)"] == pytest.approx(100 * np.std(y, ddof=1) / y.mean())
+    m2, m3, m4 = (np.mean(deviations ** r) for r in (2, 3, 4))
+    assert values["İkinci merkezî moment m₂"] == pytest.approx(m2)
+    assert values["Üçüncü merkezî moment m₃"] == pytest.approx(m3)
+    assert values["Dördüncü merkezî moment m₄"] == pytest.approx(m4)
+    assert values["Çarpıklık g₁"] == pytest.approx(m3 / m2 ** 1.5)
+    assert values["Basıklık b₂"] == pytest.approx(m4 / m2 ** 2)
+    assert values["Fazla basıklık g₂"] == pytest.approx(m4 / m2 ** 2 - 3)
     assert values["En büyük gözlemin z-skoru"] == pytest.approx((x.max() - mean) / s)
     assert values["En küçük gözlemin z-skoru"] == pytest.approx((x.min() - mean) / s)
     assert values["Güney: en büyük gözlemin z-skoru"] == pytest.approx((135 - 40) / np.std(south, ddof=1))
@@ -103,13 +110,13 @@ def test_konu05_alternative_tells_the_story_of_the_notes() -> None:
     assert "İki grubun ortalaması da 40" in spec.step(1).takeaway
     assert "Güney grubunun gözlemleri daha geniş" in spec.step(2).takeaway
     assert "yaklaşık 7,96 katıdır" in spec.step(4).takeaway
-    assert "|z| > 3 olan gözlem sayısı: 1" in spec.step(6).takeaway
-    assert "Sınırların dışındaki gözlem (135) aykırı değer adayıdır" in spec.step(8).takeaway
-    assert "sağ bıyık 58" in spec.step(9).takeaway and "Beş sayı özeti 12; 30,75; 38,5; 43,5 ve 135" in \
-        spec.step(9).takeaway
-    assert "doğrusal ilişkinin yönü pozitif" in spec.step(11).takeaway
-    assert "medyan ve IQR" in spec.step(12).takeaway
-    boxes = _ops(spec, 9, BoxSummary)[0]
+    assert "|z| > 3 olan gözlem sayısı: 1" in spec.step(7).takeaway
+    assert "Sınırların dışındaki gözlem (135) aykırı değer adayıdır" in spec.step(9).takeaway
+    assert "sağ bıyık 58" in spec.step(10).takeaway and "Beş sayı özeti 12; 30,75; 38,5; 43,5 ve 135" in \
+        spec.step(10).takeaway
+    assert "doğrusal ilişkinin yönü pozitif" in spec.step(12).takeaway
+    assert "medyan ve IQR" in spec.step(13).takeaway
+    boxes = _ops(spec, 10, BoxSummary)[0]
     assert [label for _, _, label in boxes.series] == ["Tümü", "Kuzey", "Güney"]
     assert [op.value for op in _ops(spec, 1, Subset)] == ["Kuzey", "Güney"]
 
@@ -126,7 +133,7 @@ INCOME = pd.DataFrame({
 def test_konu05_without_optional_columns_asks_for_them() -> None:
     spec, _ = _konu05(INCOME, {"sayisal": "Gelir"})
     assert run_lab(spec).all_passed
-    for number in (1, 2, 10, 11):
+    for number in (1, 2, 11, 12):
         assert "sütun seçin" in spec.step(number).explanation and not spec.step(number).checks
     assert spec.step(1).operations  # veri yine Adım 1'de okunur
     assert "İkinci bir sayısal sütun seçerseniz" in spec.step(5).explanation
@@ -144,29 +151,29 @@ def test_konu05_blank_cells_in_optional_columns_are_handled_per_step() -> None:
     assert values["B: ortalama"] == pytest.approx(np.mean([14.0, 11.75, 40.0]))
     first = spec.step(5).operations[0]
     assert isinstance(first, CompleteCases) and first.columns == ("gelir", "harcama")
-    assert not _ops(spec, 10, CompleteCases)  # iki sütunun tam gözlemleri Adım 5'te seçildi
-    assert "1 gözlem bu adımda kullanılmaz; 7 gözlem kalır" in spec.step(10).explanation
+    assert not _ops(spec, 11, CompleteCases)  # iki sütunun tam gözlemleri Adım 5'te seçildi
+    assert "1 gözlem bu adımda kullanılmaz; 7 gözlem kalır" in spec.step(11).explanation
     paired = INCOME.dropna(subset=["Harcama"])
     assert values["Kovaryans s_xy"] == pytest.approx(np.cov(paired["Gelir"], paired["Harcama"])[0, 1])
-    assert "negatif çarpım yok" in spec.step(10).takeaway
+    assert "negatif çarpım yok" in spec.step(11).takeaway
 
 
-def test_konu05_cv_needs_a_positive_mean_and_no_negative_values() -> None:
+def test_konu05_signed_cv_is_computable_but_needs_a_scale_interpretation() -> None:
     frame = pd.DataFrame({"Büyüme": [-2.5, 1.0, 3.5, 0.5, 2.0, -1.0], "Satış": [10, 12, 15, 11, 14, 9]})
     spec, _ = _konu05(frame, {"sayisal": "Büyüme", "ikinci": "Satış"})
     assert run_lab(spec).all_passed
-    assert [check.label for check in spec.step(5).checks] == ["Satış: CV (%)"]
-    assert "negatif değer var" in spec.step(5).explanation
+    assert [check.label for check in spec.step(5).checks] == ["Büyüme: CV (%)", "Satış: CV (%)"]
+    assert "karışık işaretli" in spec.step(5).takeaway
     only, _ = _konu05(frame, {"sayisal": "Büyüme"})
-    assert not only.step(5).operations and "oran ölçekli" in only.step(5).explanation
+    assert only.step(5).operations and "oransal ölçek" in only.step(5).takeaway
 
 
 def test_konu05_constant_or_short_second_column_blocks_correlation() -> None:
     frame = pd.DataFrame({"x": [1, 2, 3, 4, 5, 6], "y": [7, 7, 7, 7, 7, 7], "z": [1, None, None, None, None, 2]})
     constant, _ = _konu05(frame, {"sayisal": "x", "ikinci": "y"})
-    assert "korelasyon tanımsızdır" in constant.step(11).explanation and not constant.step(11).checks
+    assert "korelasyon tanımsızdır" in constant.step(12).explanation and not constant.step(12).checks
     short, _ = _konu05(frame, {"sayisal": "x", "ikinci": "z"})
-    assert "en az üç gözlem" in short.step(10).explanation and run_lab(short).all_passed
+    assert "en az üç gözlem" in short.step(11).explanation and run_lab(short).all_passed
 
 
 @pytest.mark.parametrize("frame, roles, message", [
@@ -187,7 +194,7 @@ def test_konu05_boundary_observations_count_inside_the_chebyshev_interval() -> N
     for values in ([10, 6, 8, 8, 8, 8, 8, 8, 8], [1.0, 0.6, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]):
         spec, _ = _konu05(pd.DataFrame({"x": values}), {"sayisal": "x"})
         assert _values(spec)["k = 2: x̄ ± 2s içindeki gözlemlerin payı"] == 1.0
-        assert "9 gözlemin 9 tanesi" in spec.step(7).explanation
+        assert "9 gözlemin 9 tanesi" in spec.step(8).explanation
     plain = np.array([1.0, 0.6] + [0.8] * 7)
     assert (np.abs(plain - plain.mean()) <= 2 * plain.std(ddof=1)).sum() < 9  # payı olmadan sınırdakiler dışarıda
 
@@ -197,7 +204,7 @@ def test_konu05_large_data_uses_histograms_and_large_values_keep_safe_digits() -
     frame = pd.DataFrame({"Süre": np.round(rng.gamma(2, 9, 400), 1), "Grup": rng.choice(["A", "B"], 400)})
     spec, _ = _konu05(frame, {"sayisal": "Süre", "grup": "Grup"})
     assert run_lab(spec).all_passed
-    assert _ops(spec, 8, Histogram) and not _ops(spec, 8, DotPlot)
+    assert _ops(spec, 9, Histogram) and not _ops(spec, 9, DotPlot)
     large, _ = _konu05(pd.DataFrame({"x": [123456789012.5 + step * 1000.25 for step in range(40)]}),
                        {"sayisal": "x"})
     decimals = {check.label: check.decimals for check in large.step(3).checks}
@@ -334,7 +341,7 @@ def test_signless_zero_and_exact_box_values_in_other_sources() -> None:
     assert _signless_zero("−0,01") == "−0,01" and _signless_zero("−10") == "−10"
     spec = O5.alternative()
     state = run_lab(spec).state
-    box = _ops(spec, 9, BoxSummary)[0]
+    box = _ops(spec, 10, BoxSummary)[0]
     shown = display_table(box, state.tables["kutu"], spec.label, small=True)
     row = shown[shown["Özet"] == "Alt sınır Q₁ − 1,5·IQR"].iloc[0]
     assert row["Tümü"] == "11,625" and row["Kuzey"] == "26"
@@ -350,7 +357,7 @@ def test_reference_lines_show_the_digits_of_their_metric() -> None:
 
     spec = O5.alternative()
     state = run_lab(spec).state
-    plot = _ops(spec, 8, DotPlot)[0]
+    plot = _ops(spec, 9, DotPlot)[0]
     assert plot.reference_decimals == (3, 3)
     names = [trace.name for trace in figure_for(plot, state, spec.label).data if trace.name]
     assert "Alt sınır: 11,625" in names and "Üst sınır: 62,625" in names
@@ -377,7 +384,7 @@ def test_konu06_rounded_terms_are_not_written_with_an_equals_sign() -> None:
 def test_konu05_products_that_are_zero_are_counted() -> None:
     """Ortalamadaki gözlemin (x = x̄) sapma çarpımı sıfırdır; metin üç durumu da sayar."""
 
-    takeaway = O5.alternative().step(10).takeaway
+    takeaway = O5.alternative().step(11).takeaway
     assert "24 gözlemin 18 tanesinde pozitif, 4 tanesinde negatif ve 2 tanesinde sıfır" in takeaway
 
 
@@ -425,8 +432,8 @@ def test_konu05_chebyshev_slack_grows_with_the_magnitude_of_the_data() -> None:
     spec, _ = _konu05(frame, {"sayisal": "Tutar"})
     assert run_lab(spec).all_passed
     assert _values(spec)["k = 3: x̄ ± 3s içindeki gözlemlerin payı"] == 1.0
-    assert "10⁻⁶ göreli payla (ks × 1,000001)" in spec.step(7).code_note
-    assert "10⁻⁹ göreli payla (ks × 1,000000001)" in O5.alternative().step(7).code_note
+    assert "10⁻⁶ göreli payla (ks × 1,000001)" in spec.step(8).code_note
+    assert "10⁻⁹ göreli payla (ks × 1,000000001)" in O5.alternative().step(8).code_note
 
 
 def test_konu05_an_observation_on_the_fence_is_not_an_outlier() -> None:
@@ -437,9 +444,9 @@ def test_konu05_an_observation_on_the_fence_is_not_an_outlier() -> None:
     run = run_lab(spec)
     assert run.all_passed
     assert run.state.scalars["aykiri_sayisi"] == 0 and run.state.tables["kutu"].loc["aykiri_sayisi", "Süre"] == 0
-    assert "Sınırların dışında gözlem yok" in spec.step(8).takeaway and "1{,}91" in spec.step(8).explanation
-    assert _ops(spec, 9, BoxSummary)[0].fence_decimals == 5 and "5 basamağa yuvarlar" in spec.step(8).code_note
-    assert "bıyıklar en küçük ve en büyük gözleme uzanır" in spec.step(9).takeaway
+    assert "Sınırların dışında gözlem yok" in spec.step(9).takeaway and "1{,}91" in spec.step(9).explanation
+    assert _ops(spec, 10, BoxSummary)[0].fence_decimals == 5 and "5 basamağa yuvarlar" in spec.step(9).code_note
+    assert "bıyıklar en küçük ve en büyük gözleme uzanır" in spec.step(10).takeaway
 
 
 def test_konu05_exact_linear_relation_gives_r_exactly_minus_one() -> None:
@@ -448,15 +455,15 @@ def test_konu05_exact_linear_relation_gives_r_exactly_minus_one() -> None:
     x = [15, 41, 5, 30, 36, 9, 3, 14, 33, 28, 8, 22, 33]
     spec, _ = _konu05(pd.DataFrame({"x": x, "y": [-value - 1 for value in x]}), {"sayisal": "x", "ikinci": "y"})
     assert run_lab(spec).all_passed
-    assert spec.step(11).takeaway.startswith("r = −1: noktaların hepsi bir doğrunun üzerindedir")
-    assert spec.step(11).explanation.endswith("$r = −1$.")
+    assert spec.step(12).takeaway.startswith("r = −1: noktaların hepsi bir doğrunun üzerindedir")
+    assert spec.step(12).explanation.endswith("$r = −1$.")
 
 
 def test_konu05_rounded_substitutions_are_written_with_approx() -> None:
     """Yerine konan değer yuvarlanmışsa zincirdeki eşitlik "≈" olur: z ≈ (135 − 40)/23,06 ≈ 4,12; kareli sapmalar
     toplamı yuvarlanmışsa varyans da "≈" ile yazılır."""
 
-    assert "$z \\approx (135 - 40)/23{,}06 \\approx 4{,}12$" in O5.alternative().step(6).explanation
+    assert "$z \\approx (135 - 40)/23{,}06 \\approx 4{,}12$" in O5.alternative().step(7).explanation
     frame = pd.DataFrame({"x": [0, 0, 1, 1, 1, 2, 4]})  # Σ(x − x̄)² = 80/7 sonsuz ondalıklı
     spec, _ = _konu05(frame, {"sayisal": "x"})
     assert "\\approx 11{,}43/(7 - 1) \\approx 1{,}9$" in spec.step(3).explanation
@@ -472,7 +479,7 @@ def test_konu05_values_too_close_within_a_group_or_the_pairs_are_reported() -> N
     with pytest.raises(K.UploadError, match="“A” grubundaki “x” değerleri"):
         _konu05(frame, {"sayisal": "x", "grup": "g"})
     spec, _ = _konu05(frame, {"sayisal": "x", "ikinci": "y"})
-    assert "büyüklüklerine göre birbirine çok yakın" in spec.step(10).explanation and not spec.step(11).operations
+    assert "büyüklüklerine göre birbirine çok yakın" in spec.step(11).explanation and not spec.step(12).operations
     assert "İkinci sütunun CV'si bu adımda hesaplanmaz" in spec.step(5).explanation
 
 
@@ -481,8 +488,8 @@ def test_konu05_constant_second_column_keeps_the_covariance() -> None:
 
     spec, _ = _konu05(pd.DataFrame({"x": [1, 2, 3, 4, 5.5], "y": [2, 2, 2, 2, 2]}), {"sayisal": "x", "ikinci": "y"})
     assert run_lab(spec).all_passed and _values(spec)["Kovaryans s_xy"] == 0
-    assert spec.step(10).takeaway.startswith("Sapmaların çarpımı 5 gözlemin hepsinde sıfır; kovaryans sıfır.")
-    assert not spec.step(11).operations and "korelasyon tanımsızdır" in spec.step(11).explanation
+    assert spec.step(11).takeaway.startswith("Sapmaların çarpımı 5 gözlemin hepsinde sıfır; kovaryans sıfır.")
+    assert not spec.step(12).operations and "korelasyon tanımsızdır" in spec.step(12).explanation
 
 
 def test_konu06_set_notation_keeps_the_irregular_elements() -> None:
@@ -519,7 +526,7 @@ def test_signless_zero_in_legends_and_profile_tables() -> None:
     names = [trace.name for plot in _ops(spec, 1, DotPlot) for trace in figure_for(plot, state, spec.label).data
              if trace.name]
     assert names and all("−" not in name for name in names)
-    profile = [op for op in spec.step(12).operations if type(op).__name__ == "ScalarTable"][0]
+    profile = [op for op in spec.step(13).operations if type(op).__name__ == "ScalarTable"][0]
     shown = display_table(profile, state.tables[profile.result], spec.label, small=True)
     assert not shown["Değer"].str.startswith("−0").any()
 
@@ -531,7 +538,7 @@ def test_box_summary_columns_are_series_labels_in_other_sources() -> None:
 
     frame = pd.DataFrame({"x": [1.5, 2.5, 3.0, 4.25, 5.0, 6.5], "g": ["sapma", "z"] * 3})
     spec, _ = _konu05(frame, {"sayisal": "x", "grup": "g"})
-    box = _ops(spec, 9, BoxSummary)[0]
+    box = _ops(spec, 10, BoxSummary)[0]
     shown = display_table(box, run_lab(spec).state.tables["kutu"], spec.label, small=True)
     assert list(shown.columns) == ["Özet", "Tümü", "sapma", "z"]
 
@@ -567,7 +574,7 @@ def test_konu05_unreliable_checks_are_skipped_for_huge_values() -> None:
     labels = [check.label for check in spec.step(3).checks]
     assert "İlk gözlemin kareli sapması" not in labels and "Örneklem varyansı s²" in labels
     assert "ilk gözlemin kareli sapması kontrol edilmez" in spec.step(3).code_note
-    assert sum(len(step.checks) for step in O5.alternative().steps) == 47  # olağan veride hiçbiri atlanmaz
+    assert sum(len(step.checks) for step in O5.alternative().steps) == 53  # olağan veride hiçbiri atlanmaz
 
 
 def test_konu05_quartile_digits_avoid_exact_halves() -> None:
@@ -576,8 +583,8 @@ def test_konu05_quartile_digits_avoid_exact_halves() -> None:
     spec = _csv_konu05(pd.DataFrame({"x": [999999999000, 1000000000000, 1000000000000.5, 1000000001000,
                                            1000000002000, 1000000300000, 1000000300000, 1000000300001]}),
                        {"sayisal": "x"})
-    decimals = {check.label: check.decimals for check in spec.step(8).checks}
-    assert decimals["IQR = Q₃ − Q₁"] == 1 and "$IQR \\approx 299999{,}9$" in spec.step(8).explanation
+    decimals = {check.label: check.decimals for check in spec.step(9).checks}
+    assert decimals["IQR = Q₃ − Q₁"] == 1 and "$IQR \\approx 299999{,}9$" in spec.step(9).explanation
 
 
 def test_konu05_fence_note_when_fences_cannot_be_rounded() -> None:
@@ -586,9 +593,9 @@ def test_konu05_fence_note_when_fences_cannot_be_rounded() -> None:
 
     values = [1e12 - 300000, 1e12, 1e12 + 1, 1e12 + 2, 1e12 + 3, 1e12 + 100000.2, 1e12 + 250000.5]
     spec = _csv_konu05(pd.DataFrame({"x": values}), {"sayisal": "x"})
-    assert _ops(spec, 9, BoxSummary)[0].fence_decimals is None
+    assert _ops(spec, 10, BoxSummary)[0].fence_decimals is None
     assert "Not: 1000000250000,5 kesin hesapta sınırların içindedir ama kayan noktalı hesapta dışında kalır" in \
-        spec.step(8).takeaway
+        spec.step(9).takeaway
 
 
 def test_konu05_proportional_columns_have_the_same_cv() -> None:
@@ -632,7 +639,7 @@ def test_konu05_wording_for_edge_cases() -> None:
     spec = _csv_konu05(frame, {"sayisal": "x", "grup": "g", "ikinci": "y"})
     assert "standart sapmaları birbirine çok yakındır" in spec.step(4).takeaway
     assert "ikinci sütunda değeri olan gözlem yok" in spec.step(5).explanation
-    decimals = {check.label: check.decimals for check in O5.alternative().step(6).checks}
+    decimals = {check.label: check.decimals for check in O5.alternative().step(7).checks}
     assert decimals["En büyük gözlemin z-skoru"] == decimals["En küçük gözlemin z-skoru"]
 
 

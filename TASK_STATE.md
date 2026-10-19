@@ -1,41 +1,60 @@
-# Sunum–Streamlit bütünleştirmesi — güncel durum
+# Konu 5 — CV, çarpıklık ve basıklık
 
-Güncelleme: 17 Ekim 2026. Yerel kapsam tamamlandı.
+## Son ekleme — §5.6 üç basıklık grafiği
+- Mezokurtik, leptokurtik ve platikurtik durumlar notlara ve sunum sayfa 19'a eklendi.
+  Aynı merkez/varyans, normal kesikli referans; b₂/g₂ sınıfları ve kısa yorum sınırları gösterilir.
+- 40 sunum sayfası ve 16 bağlantı korundu; diğer 39 kaynak çerçevesi aynı. Notlar 301 sayfa.
+- Streamlit kodu değişmedi: app/core/topics/tests kapsamındaki 118 Python dosyası aynı hash'e sahip.
+- Yeniden doğrulama: 940 pytest geçti (355,01 s), compileall ve diff --check geçti; PDF'ler yeniden derlenip incelendi.
+- Son denetim: denetim/2026-10-19-kurtosis-grafikleri/RAPOR.md. Aşağıdaki kayıt önceki içerik genişletmesidir.
 
-## Amaç ve sabit sınırlar
-- Bütün konuların Uygulama adımlarını sunumdan doğrudan açmak.
-- Mevcut Sezgi içeriği/deneyleri ve bağlantılı çerçeveler korunacak; yalnız eksik bağlantı varsa eklenecek.
-- Notlar, sayısal sonuçlar, notasyon, öğretim sırası, hesaplama ve Python/R üretimi korunur.
-- Özgün kaynaklar/PDF'ler yerinde güncellenir; 30–40 gerçek sayfa sınırı, görünür ve tamamı tıklanabilir düğmeler sürer.
-- Özel materyal public repoya eklenmez. Commit, push, canlı yayımlama yapılmaz.
 
-## Başlangıç ve tamamlananlar
-- Depo başlangıçta temizdi; önceki bütünleştirme 99ca2eb commit'inde.
-- İlk envanter: 112 Uygulama adımı, 14 bağlı adım; 36 Sezgi deneyi ve 36 mevcut bağlantı.
-- 98 yeni Uygulama düğmesi eklendi. Son kapsam: 112/112 Uygulama ve 36/36 Sezgi; her hedef bir kez, toplam 148 düğme.
-- Sezgi'de eksik bağlantı yoktu; ekleme/değişiklik yapılmadı. Mevcut 50 bağlantılı kaynak çerçevesinin tamamı, Sezgi'deki 36 çerçeve dahil, aynen korundu.
-- 13 deste / 491 gerçek PDF sayfası. Konu 10'da notlardaki Adım 6 için tek uygulama slaydı eklendi: N(70,10²), 60–80 → −1–1, aynı alan ≈0,683. Deste 36 → 37 sayfa. Diğer sayfa sayıları değişmedi.
-- Konu 12a zaten tam kapsama sahipti; kaynağı değişmedi. Diğer 12 konu kaynağı güncellendi.
-- Konu 3 Adım 2, aynı sayıları kullanan örneğe bağlandı (sayfa 7). İki yoğun çerçevede yalnız düşey boşluk düzeltildi.
-- Uygulama/test/bağımlılık kodu bu turda değişmedi. Mevcut yönlendirme bütün adımları destekliyor.
+Güncelleme: 19 Ekim 2026. Yerel içerik, kod ve PDF düzenlemeleri tamamlandı.
 
-## Dosyalar
+## Amaç ve kararlar
+- Kullanıcının §5.5–5.6 genişletmesi önce LaTeX notlarına, sonra sunuma ve Streamlit'e uygulandı.
+- CV = 100s/|x̄|; pozitif ortalamada klasik CV ile aynı, mutlak paydalı biçim RSD olarak da adlandırılır.
+  Sıfır ortalamada tanımsız; sıfıra yakınken duyarlı. Anlamlı yorum oran ölçeği ve anlamlı mutlak sıfır gerektirir.
+  Negatif/karışık işaretli veri tek başına hesaplamayı engellemez; uygunluk bağlamda değerlendirilir.
+  y = ax (a ≠ 0) altında değişmez; ötelemede genellikle değişir.
+- m_r = Σ(x−x̄)^r/n; g₁ = m₃/m₂^(3/2), b₂ = m₄/m₂², g₂ = b₂−3. Yanlılık düzeltmesi yok.
+  m₂ > 0 gerekir. Sıfır çarpıklık simetriyi, normal referans değerleri normalliği kanıtlamaz.
+  Basıklık yalnız tepe yüksekliği değildir; dördüncü kuvvetli uzaklık katkısıyla açıklanır.
+- Yeni örnek veri yerine mevcut 4, 6, 8, 10, 12 yeniden kullanıldı: m₂=8, m₃=0, m₄=108,8;
+  g₁=0, b₂=1,7, g₂=−1,3. Yeni Uygulama Adım 6, §5.6'ya bağlıdır; eski 6–12 artık 7–13.
+- Mevcut Sezgi deneyleri/kodu ve bağlı kaynak çerçeveleri korundu. Bekleyen içerik kararı yok.
+
+## Değişiklikler
 - Özel ders kökü: E:/OneDrive - BAKIRÇAY ÜNİVERSİTESİ/Bakircay Dersler/Istatistik/2026-2027 IKT 217 İstatistik I.
-- Kaynaklar: Sunumlar/sunumlar/konu*.tex; PDF'ler: Sunumlar/pdfs/main_konu*.pdf.
-- Güncel rehber: Sunumlar/STREAMLIT_DERS_AKISI.md; README sayfa/düğme tablosu güncellendi.
-- Güncel denetim: denetim/2026-10-17/STREAMLIT_DENETIM_RAPORU.md.
-- Değiştirilmeyen başlangıç: denetim/2026-10-17/baseline.json. Registry, eşleştirme, kaynak/PDF denetimi, AppTest çıktıları ve görseller aynı özel dizinde.
-- Önceki 10 Ekim başlangıç/denetim kayıtları tarihsel kanıt olarak korunur.
+- Notlar: bolumler/05_degiskenlik_dagilim_iliskiler.tex; ekler/kaynakca.tex; ekler/semboller_sozlugu.tex.
+  Diğer not kaynakları ve bütün mevcut label adları korundu. Kaynakçaya iki NIST kaynağı eklendi.
+- Sunum: sunumlar/konu05_degiskenlik_dagilim_iliskiler.tex; 39 → 40 gerçek sayfa.
+  Öğrenme hedefi/CV/çarpıklık güncellendi; basıklık için bir çerçeve eklendi. 35 eski çerçeve (3 Sezgi dahil)
+  içerik olarak aynen korundu; yalnız sonraki Uygulama düğmelerinin numaraları kaydırıldı.
+- Repo: core/labs/konu05.py, ornek_konu05.py; ortak moment işlemleri core/labs/shape.py;
+  core/quiz/konu05.py (24 soru korunarak yeni kavramlar), ilgili testler ve docs/ARCHITECTURE.md.
+- Python/R aynı DSL işlemlerinden üretilir. Alternatif ve kendi verin kaynaklarında metinlerin işaret/tamlık
+  kararları kesin kesirlerle verilir; büyük değerlerde gösterim/kontrol hassasiyeti sınırlandırılır.
+- Konu 5 notes MD5 bilinçli güncellendi: 5c11318c38bca5c1e807526e0636f42b → d816fd9cff3129b0c453c5736d739f90.
+  Diğer 11 konunun kod özetleri değişmedi.
+- Akış rehberi/README güncellendi: 113 Uygulama + 36 Sezgi = 149 bağlantı, 13 deste / 492 sayfa.
 
 ## Doğrulama
-- 13 latexmk/pdfLaTeX derleme kontrolü başarılı; hata/Overfull/eksik referans yok. Önceden var olan Babel uyarısı 13 ve Underfull hbox 5 sürüyor; ilgili sayfalar incelendi. MiKTeX güncelleme durumu bildirimi var.
-- Korunan dosya hash'leri, özgün çerçeve içerikleri ve 490 eski PDF sayfasının yeni karşılıkları: 0 denetim hatası. 20 ders notu kaynak dosyası değişmedi.
-- 148 URL/etiket/tıklama alanı kontrol edildi; bütün bağlı sayfalar render edilip 25 temas sayfasında görüntülendi. Yoğun/ek sayfalar ayrıca incelendi.
-- 148 son PDF URL'si gerçek AppTest'te geçti; görünür sekme, adım/deney, not kaynağı ve başlangıç değerleri doğru.
-- Tek tam pytest çalışması: 932 geçti, 0 atlandı (372,28 saniye); R 4.6.1 ve readxl yolları dahil.
-- compileall -q app.py core topics tests ve git diff --check başarılı.
+- Tam pytest: 940 geçti, 0 atlandı (329,94 s); R 4.6.1/readxl ve Python/R betik çalıştırmaları dahil.
+- Son metin/numara düzeltmeleri sonrası ilgili 75 test tekrar geçti (4,47 s).
+- compileall -q app.py core topics tests ve git diff --check geçti.
+- Notlar ve Konu 5 sunumu latexmk/pdfLaTeX ile başarıyla derlendi: 301 ve 40 sayfa.
+  Overfull, eksik atıf/referans veya durduran TeX hatası yok. Babel/MiKTeX ortam bildirimleri;
+  değişmeyen Konu 9 PDF yer imi uyarıları ve 7 Underfull satırı sürüyor.
+  longtable paketinden gelen “ignored error: Infinite glue shrinkage…” bildirimi LaTeX projesinin #1907
+  kaydında zararsız uyarı olarak tanımlanmış. Görünüm kontrol edildi; paketler değiştirilmedi.
+- Değişen slaytlar, notların §5.5–5.6 sayfaları, sözlük ve kaynakça görsel olarak kontrol edildi.
+- Son PDF'lerdeki 149 URL ve tıklama geometrisi doğrulandı. 149 hedef gerçek AppTest'te doğru konu, sekme,
+  adım/deney, not kaynağı ve varsayılan parametrelerle açıldı.
 
-## Açık durum
-- Yerel düzenleme, derleme, test ve raporlama tamamlandı; bekleyen içerik kararı yok.
-- Canlı site bu turda yeniden test edilmedi. 10 Ekim canlı gözlemi bugünkü dağıtımın durumu olarak kullanılmamalı.
-- Commit, push veya canlı yayımlama yapılmadı; özel ders dosyaları repoya eklenmedi.
+## Kayıtlar ve kalan durum
+- Güncel özel denetim: denetim/2026-10-19-konu05/RAPOR.md, baseline.json, preservation_verified.json,
+  streamlit_verification.json, targets_verified.json, görseller ve verify_konu05.py.
+- Önceki tüm-konular bağlantı çalışması: denetim/2026-10-17/STREAMLIT_DENETIM_RAPORU.md.
+- Özel kaynak/PDF'ler public repoya eklenmedi. Commit, push ve canlı dağıtım yapılmadı.
+  Tamamlananlar yerel dosyalardır; yayınlanmış sitenin bu değişiklikleri içerdiği iddia edilmez.
