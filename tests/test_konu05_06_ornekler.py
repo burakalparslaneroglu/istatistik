@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from itertools import product
+from itertools import combinations, permutations, product
 
 import numpy as np
 import pandas as pd
@@ -226,6 +226,14 @@ def test_konu06_alternative_matches_a_direct_count() -> None:
     assert values["6!"] == math.factorial(6)
     assert values["C(6, 3) = 6!/(3! 3!)"] == values["Listelenen grup sayısı"] == math.comb(6, 3) == 20
     assert values["P(6, 3) = 6!/3!"] == values["Listelenen görev dağılımı sayısı"] == math.perm(6, 3) == 120
+    groups = list(combinations(range(6), 3))
+    assignments = list(permutations(range(6), 3))
+    assert values["P(Gruba seçilme) = C(5, 2) / C(6, 3)"] == pytest.approx(
+        sum(0 in group for group in groups) / len(groups)
+    )
+    assert values["P(İlk görevi alma) = P(5, 2) / P(6, 3)"] == pytest.approx(
+        sum(assignment[0] == 0 for assignment in assignments) / len(assignments)
+    )
     rows = [(odeme, tur) for odeme, tur, count in O6.ALT_COUNTS for _ in range(count)]
     n = len(rows)
     mobile = sum(odeme == "Mobil" for odeme, _ in rows)
@@ -276,6 +284,9 @@ def test_konu06_settings_change_the_die_and_the_team() -> None:
     assert values["P(A ∩ B) = 1/20"] == pytest.approx(0.05)
     one = _konu06(CODES, {"olay_e": "Kod", "olay_f": "Durum"}, settings={"zar": 4, "ekip": 3, "secim": 1})
     assert "Tek kişi seçilirken" in one.step(3).takeaway and _values(one)["P(A ∪ B) = 3/4"] == pytest.approx(0.75)
+    one_values = _values(one)
+    assert one_values["P(Gruba seçilme) = C(2, 0) / C(3, 1)"] == pytest.approx(1 / 3)
+    assert one_values["P(İlk görevi alma) = P(2, 0) / P(3, 1)"] == pytest.approx(1 / 3)
     with pytest.raises(K.UploadError, match="büyük olamaz"):
         _konu06(CODES, {"olay_e": "Kod", "olay_f": "Durum"}, settings={"ekip": 4, "secim": 5})
 

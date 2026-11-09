@@ -273,7 +273,8 @@ STEPS = (
         title="Hipergeometrik: 20 faturadan yerine koymadan 4",
         note=NoteRef("9.5", objects=("(9.11)–(9.13)",)),
         explanation=(
-            "20 faturanın 5'inde hata vardır; denetçi 4 faturayı yerine koymadan seçer: $N = 20$, $r = 5$, $n = 4$. "
+            "20 faturanın 5'inde hata vardır. Denetçi 4 faturayı yerine koymadan, her dörtlü eşit olasılıklı "
+            "olacak biçimde seçer: $N = 20$, $r = 5$, $n = 4$. "
             "Tam bir hatalı fatura olasılığı $P(X = 1) = \\binom{5}{1}\\binom{15}{3}/\\binom{20}{4}$'tür "
             "(Denklem 9.11). Yazılımda hipergeometrik olasılık fonksiyonu Python'da `stats.hypergeom.pmf(x, N, r, n)`, "
             "R'de `dhyper(x, r, N - r, n)`'dir: R başarı ve başarısızlık sayılarını ayrı ister."

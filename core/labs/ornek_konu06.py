@@ -3,7 +3,7 @@
 Ders notlarındaki adımlar (§6.2–§6.10) aynı numaralarla, verisi değiştirilebilir biçimde yazılır. Olaylar veriden
 kurulur: iki kategorik sütun ve her birinde seçilen bir kategori E ve F olaylarını tanımlar (Adım 2, 4, 6, 8 ve 9).
 Sayma kuralları öğrencinin seçtiği değerlerle çalışır: zarın yüz sayısı m (Adım 1, 2, 4–7), ekip büyüklüğü N ve seçilen
-kişi sayısı n (Adım 3). Alternatif örnek kurgusal bir kafe veri setidir (200 sipariş), sekiz yüzlü bir zar ve altı
+kişi sayısı n (Adım 3 ve 5). Alternatif örnek kurgusal bir kafe veri setidir (200 sipariş), sekiz yüzlü bir zar ve altı
 kişilik bir ekip; "kendi verini yükle" seçeneğinde aynı adımlar öğrencinin dosyası ve kaydırıcılarla kurulur. Notlardaki
 uygulama (``core.labs.konu06``) değişmez.
 
@@ -24,6 +24,7 @@ import pandas as pd
 
 from core.labs import expr as E
 from core.labs import kendi_veri as K
+from core.labs.konu06 import selection_event_operations
 from core.labs.ornek import (
     Case,
     CustomLab,
@@ -342,7 +343,8 @@ def _step3(case: Case, ctx: dict) -> LabStep:
         title="Faktöriyel, kombinasyon ve permütasyon",
         note=NoteRef("6.4"),
         explanation=(
-            f"{team['text']} Sıra önemsizse $\\binom{{{size}}}{{{pick}}} = {size}!/({pick}!\\,{size - pick}!)$; "
+            f"{team['text']} Sıra önemsizse $C({size},{pick}) = \\binom{{{size}}}{{{pick}}} = "
+            f"{size}!/({pick}!\\,{size - pick}!)$; "
             f"görevler farklıysa $P({size}, {pick}) = {size}!/{size - pick}!$."
         ),
         operations=tuple(operations),
@@ -364,6 +366,9 @@ def _step4(case: Case, ctx: dict) -> LabStep:
         title="Olasılık atama: klasik ve göreli frekans",
         note=NoteRef("6.5"),
         explanation=(
+            "Olay örnek uzayın bir alt kümesidir. Olasılık fonksiyonu her olaya negatif olmayan bir değer atar. "
+            "Örnek uzayın olasılığı 1 olur ve ayrık olayların olasılıkları toplanır. "
+            "$P(E_i)$, $P(\\{E_i\\})$ için kısa gösterimdir. "
             f"Klasik yöntem: $m$ eşit olasılıklı sonuç varsa her örnek noktaya $1/m$ atanır; {m} yüzlü adil zarda "
             f"$P(1) = \\cdots = P({m}) = 1/{m} {_sign(one, MAX_DIGITS)} {_prob(one)}$. Göreli frekans yöntemi: "
             f"“{md(ctx['e_label'])}” sütununda {n} gözlemin {count} tanesi “{md(e_pick)}” ise bu kategorinin "
@@ -397,6 +402,9 @@ def _evens(m: int) -> list[int]:
 
 def _step5(case: Case, ctx: dict) -> LabStep:
     m, names = ctx["m"], ctx["names"]
+    size, pick = ctx["team"], ctx["pick"]
+    group_digits = _digits(Fraction(pick, size))
+    role_digits = _digits(Fraction(1, size))
     sonuc, olasilik = names["sonuc"], names["olasilik"]
     evens, top = _evens(m), [m - 1, m]
     p_a = Fraction(len(evens), m)
@@ -405,13 +413,15 @@ def _step5(case: Case, ctx: dict) -> LabStep:
     sum_label = " + ".join([f"1/{m}"] * len(evens)) if len(evens) <= 4 else "olasılıklar toplamı"
     return LabStep(
         number=5,
-        title="Olay ve olayın olasılığı",
+        title="Olayın olasılığını hesaplama",
         note=NoteRef("6.6"),
         explanation=(
             f"Olay örnek uzayın bir alt kümesidir: $A$ = “çift sayı” $= {_set(evens)}$, $B$ = “en az {m - 1}” "
             f"$= {_set(top)}$. Olayın olasılığı olaydaki örnek noktaların olasılıklarının toplamıdır: "
             "$P(A) = \\sum_{E_i \\in A} P(E_i)$. Sonuçlar eşit olasılıklıysa bu, olaydaki nokta sayısının $m$'ye "
-            "bölümüne eşittir."
+            "bölümüne eşittir. Ekip örneğinde belirli bir üye gruptaysa kalan üyeler kombinasyonla sayılır. "
+            "Aynı üye ilk görevi aldıysa kalan görevler permütasyonla sayılır. Her hesapta temel sonuçların kendi "
+            "örnek uzayında eşit olasılıklı olduğunu varsayıyoruz."
         ),
         operations=(
             Event("zar", "A", sonuc, tuple(evens), "A: çift sayı gelmesi"),
@@ -420,13 +430,23 @@ def _step5(case: Case, ctx: dict) -> LabStep:
             Statistic("zar", olasilik, "sum", "P_A", "P(A): olasılıklar toplamı", where=("A", 1),
                       decimals=digits),
             Statistic("zar", "A", "sum", "A_sayisi", "A'daki örnek nokta sayısı", decimals=0),
-            Scalar("P_A_klasik", E.div(E.ref("A_sayisi"), E.ref("m")), "P(A) = A'daki nokta sayısı / m",
+            Scalar("P_A_klasik", E.div(E.ref("A_sayisi"), E.ref("m")), "P(A): sayma oranı",
                    decimals=digits),
+            *selection_event_operations(
+                size, pick, "P(Gruba seçilme)", "P(İlk görevi alma)",
+                group_digits, role_digits,
+            ),
         ),
         checks=(
             _scalar("A_sayisi", "A'daki örnek nokta sayısı"),
             _scalar("P_A", f"P(A) = {sum_label}", digits),
             _scalar("P_A_klasik", f"P(A) = {len(evens)}/{m}", digits),
+            _scalar("uygun_grup_sayisi", f"Uygun gruplar: C({size - 1}, {pick - 1})"),
+            _scalar("uygun_gorev_sayisi", f"Uygun görev dağılımları: P({size - 1}, {pick - 1})"),
+            _scalar("P_gruba_secilme", f"P(Gruba seçilme) = C({size - 1}, {pick - 1}) / C({size}, {pick})",
+                    group_digits),
+            _scalar("P_ilk_gorev", f"P(İlk görevi alma) = P({size - 1}, {pick - 1}) / P({size}, {pick})",
+                    role_digits),
         ),
         takeaway=(
             f"İki yol aynı sonucu verir: ${terms} = {len(evens)}/{m} {_sign(p_a, digits)} {_prob(p_a, digits)}$. Sayma "

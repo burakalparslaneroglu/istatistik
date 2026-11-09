@@ -1,7 +1,7 @@
 """Konu 6 uygulaması: örnek uzay, sayma kuralları, olasılık atama, olaylar ve toplama kuralı.
 
 Ders notlarının çözümlü örnekleri: §6.2 (zar ve iki zar), §6.3 (sipariş ağacı ve çarpım kuralı), §6.4 (faktöriyel,
-kombinasyon, permütasyon), §6.5 (klasik ve göreli frekans yöntemi), §6.6 (olay), §6.7 (tümleyen), §6.8 (birleşim
+kombinasyon, permütasyon), §6.5 (olasılık atama), §6.6 (olay olasılığını hesaplama), §6.7 (tümleyen), §6.8 (birleşim
 ve kesişim), §6.9 (toplama kuralı) ve §6.10 (Tablo 6.2: tedarik performansı). Buradaki her ``Check`` notlarda
 basılı bir sayıdır; değer notlardan kopyalanmıştır, hesaplanmamıştır. §6.1 ve §6.11 hesap içermez; Şekil 6.6'daki
 birikimli gecikme oranı Sezgi sekmesindeki Deney 1'in varsayılan ayarlarıyla birebir üretilir.
@@ -54,6 +54,21 @@ SHIPMENTS = (
 
 def _scalar(name: str, expected: float, label: str, decimals: int) -> Check:
     return Check(label, ScalarTarget(name), expected, decimals)
+
+
+def selection_event_operations(
+    size: int, pick: int, group_event: str, role_event: str, group_digits: int, role_digits: int
+) -> tuple[Scalar, ...]:
+    """Bir üye gruba veya ilk göreve sabitlendiğinde kalan seçimleri say."""
+    return (
+        Scalar("uygun_grup_sayisi", E.comb(size - 1, pick - 1), "Üyeyi içeren grup sayısı", decimals=0),
+        Scalar("uygun_gorev_sayisi", E.perm(size - 1, pick - 1), "İlk göreve uygun dağılımlar",
+               decimals=0),
+        Scalar("P_gruba_secilme", E.div(E.ref("uygun_grup_sayisi"), E.ref("kombinasyon")), group_event,
+               decimals=group_digits),
+        Scalar("P_ilk_gorev", E.div(E.ref("uygun_gorev_sayisi"), E.ref("permutasyon")), role_event,
+               decimals=role_digits),
+    )
 
 
 STEPS = (
@@ -119,7 +134,7 @@ STEPS = (
         note=NoteRef("6.4", objects=("Şekil 6.4",)),
         explanation=(
             "Beş kişilik ekibi A (Ayşe), B (Berk), C, D ve E ile gösterelim. Eğitime iki kişi gönderilecekse sıra "
-            "önemsizdir: $\\binom{5}{2} = 5!/(2!\\,3!)$. Bir başkan ve bir raportör seçilecekse görevler farklıdır: "
+            "önemsizdir: $C(5,2) = \\binom{5}{2} = 5!/(2!\\,3!)$. Bir başkan ve bir raportör seçilecekse görevler farklıdır: "
             "$P(5, 2) = 5!/3!$."
         ),
         operations=(
@@ -148,6 +163,9 @@ STEPS = (
         title="Olasılık atama: klasik ve göreli frekans",
         note=NoteRef("6.5"),
         explanation=(
+            "Rassal deneyin örnek uzayı belirlendikten sonra ilgilendiğimiz koşulu bir olay olarak yazarız. "
+            "Olasılık fonksiyonu olaylara negatif olmayan değerler atar. Örnek uzayın olasılığı 1'dir ve ayrık "
+            "olayların olasılıkları toplanır. $P(E_i)$, tek noktalı olayın olasılığı $P(\\{E_i\\})$ için kısa gösterimdir. "
             "Klasik yöntem: $m$ eşit olasılıklı sonuç varsa her örnek noktaya $1/m$ atanır; adil zarda "
             "$P(1) = \\cdots = P(6) = 1/6$. Göreli frekans yöntemi: geçmiş 200 teslimatın 30'u gecikmişse "
             "$P(\\text{gecikme}) \\approx 30/200$. İki durumda da $0 \\le P(E_i) \\le 1$ ve $\\sum P(E_i) = 1$'dir."
@@ -173,13 +191,15 @@ STEPS = (
     ),
     LabStep(
         number=5,
-        title="Olay ve olayın olasılığı",
+        title="Olayın olasılığını hesaplama",
         note=NoteRef("6.6", objects=("Şekil 6.7",)),
         explanation=(
             "Olay örnek uzayın bir alt kümesidir: $A$ = \"çift sayı\" $= \\{2, 4, 6\\}$, $B$ = \"en az 5\" "
             "$= \\{5, 6\\}$. Olayın olasılığı olaydaki örnek noktaların olasılıklarının toplamıdır: "
             "$P(A) = \\sum_{E_i \\in A} P(E_i)$. Sonuçlar eşit olasılıklıysa bu, olaydaki nokta sayısının $m$'ye "
-            "bölümüne eşittir."
+            "bölümüne eşittir. Adım 3'teki ekipte, gruplar eşit olasılıklıysa Ayşe gruba alındığında kalan üye "
+            "dört kişiden seçilir. Görev dağılımları eşit olasılıklıysa Ayşe başkan olduğunda raportör yine dört "
+            "kişiden seçilir. Payda, ilk hesapta grup sayısı, ikincisinde görev dağılımı sayısıdır."
         ),
         operations=(
             Event("zar", "A", "sonuc", (2, 4, 6), "A: çift sayı gelmesi"),
@@ -189,11 +209,16 @@ STEPS = (
                       decimals=2),
             Statistic("zar", "A", "sum", "A_sayisi", "A'daki örnek nokta sayısı", decimals=0),
             Scalar("P_A_klasik", E.div(E.ref("A_sayisi"), E.ref("m")), "P(A) = A'daki nokta sayısı / m", decimals=2),
+            *selection_event_operations(5, 2, "P(Ayşe eğitim grubunda)", "P(Ayşe başkan)", 2, 2),
         ),
         checks=(
             _scalar("A_sayisi", 3, "A'daki örnek nokta sayısı", 0),
             _scalar("P_A", 0.50, "P(A) = 1/6 + 1/6 + 1/6", 2),
             _scalar("P_A_klasik", 0.50, "P(A) = 3/6", 2),
+            _scalar("uygun_grup_sayisi", 4, "Ayşe'yi içeren grup sayısı C(4, 1)", 0),
+            _scalar("uygun_gorev_sayisi", 4, "Ayşe'nin başkan olduğu dağılım sayısı P(4, 1)", 0),
+            _scalar("P_gruba_secilme", 0.40, "P(Ayşe eğitim grubunda) = C(4, 1) / C(5, 2)", 2),
+            _scalar("P_ilk_gorev", 0.20, "P(Ayşe başkan) = P(4, 1) / P(5, 2)", 2),
         ),
         takeaway=(
             "İki yol aynı sonucu verir: 1/6 + 1/6 + 1/6 = 3/6 = 0,50. Sayma oranı yalnız örnek noktalar eşit "
